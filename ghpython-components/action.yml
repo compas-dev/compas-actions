@@ -16,7 +16,7 @@ inputs:
     default: ""
   componentizer-ref:
     description: ghpython_componentizer Git tag or branch to install
-    default: main
+    default: v0.1.0
 
 runs:
   using: composite
