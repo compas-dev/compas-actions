@@ -98,8 +98,9 @@ tag to the caller-owned trusted-publishing workflow. This flow reads repository
 state rather than commit messages, so merge, squash, and rebase strategies are
 all supported.
 
-Use a GitHub App installation token for `release-pr` when automated pull
-requests should run required checks without manual workflow approval.
+The minimal setup uses `github.token`; a maintainer then approves the generated
+pull request's workflow runs. Repositories that later need unattended checks
+can instead pass a GitHub App installation token.
 
 ## Versions
 
