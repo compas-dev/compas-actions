@@ -1,0 +1,76 @@
+name: Check pull request
+description: Require a changelog update unless the pull request has an explicit skip label
+
+inputs:
+  changelog-path:
+    description: Repository-relative changelog path that the pull request must update
+    default: CHANGELOG.md
+  skip-label:
+    description: Pull request label that permits omitting a changelog update
+    default: no changelog
+
+outputs:
+  changelog-updated:
+    description: Whether the pull request updates the configured changelog
+    value: ${{ steps.changelog.outputs.updated }}
+  skipped:
+    description: Whether the check was skipped by label
+    value: ${{ steps.changelog.outputs.skipped }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v7.0.1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Require changelog update
+      id: changelog
+      shell: bash
+      env:
+        CHANGELOG_PATH: ${{ inputs.changelog-path }}
+        SKIP_LABEL: ${{ inputs.skip-label }}
+      run: |
+        if [[ "$GITHUB_EVENT_NAME" != "pull_request" ]]; then
+          echo "::error::pr-checks must run for a pull_request event"
+          exit 1
+        fi
+
+        if jq --exit-status --arg label "$SKIP_LABEL" \
+          'any(.pull_request.labels[]?; .name == $label)' \
+          "$GITHUB_EVENT_PATH" >/dev/null; then
+          echo "Changelog check skipped by label: $SKIP_LABEL"
+          echo "updated=false" >> "$GITHUB_OUTPUT"
+          echo "skipped=true" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        base_sha=$(jq --raw-output '.pull_request.base.sha' "$GITHUB_EVENT_PATH")
+        head_sha=$(jq --raw-output '.pull_request.head.sha' "$GITHUB_EVENT_PATH")
+
+        for commit in "$base_sha" "$head_sha"; do
+          if ! git cat-file -e "$commit^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$commit"
+          fi
+        done
+
+        updated=false
+        while IFS= read -r changed_file; do
+          if [[ "$changed_file" == "$CHANGELOG_PATH" ]]; then
+            updated=true
+            break
+          fi
+        done < <(git diff --name-only "$base_sha...$head_sha")
+
+        echo "updated=$updated" >> "$GITHUB_OUTPUT"
+        echo "skipped=false" >> "$GITHUB_OUTPUT"
+        if [[ "$updated" != "true" ]]; then
+          echo "::error::$CHANGELOG_PATH must be updated, or apply the '$SKIP_LABEL' label"
+          exit 1
+        fi
+
+branding:
+  icon: check-circle
+  color: green
+

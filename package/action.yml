@@ -1,0 +1,38 @@
+name: Build Python distributions
+description: Build and validate wheel and source distributions without publishing them
+
+inputs:
+  sdist:
+    description: Build a source distribution
+    default: "true"
+  wheel:
+    description: Build a wheel
+    default: "true"
+  output-directory:
+    description: Directory for built distributions
+    default: dist
+
+runs:
+  using: composite
+  steps:
+    - name: Install packaging tools
+      shell: bash -el {0}
+      run: python -m pip install --upgrade build twine
+
+    - name: Build distributions
+      shell: bash -el {0}
+      env:
+        BUILD_SDIST: ${{ inputs.sdist }}
+        BUILD_WHEEL: ${{ inputs.wheel }}
+        OUTPUT_DIRECTORY: ${{ inputs.output-directory }}
+      run: |
+        args=(--outdir "$OUTPUT_DIRECTORY")
+        [[ "$BUILD_SDIST" == "true" ]] && args+=(--sdist)
+        [[ "$BUILD_WHEEL" == "true" ]] && args+=(--wheel)
+        if [[ "$BUILD_SDIST" != "true" && "$BUILD_WHEEL" != "true" ]]; then
+          echo "::error::At least one of sdist or wheel must be true"
+          exit 1
+        fi
+        python -m build "${args[@]}"
+        python -m twine check "$OUTPUT_DIRECTORY"/*
+

@@ -1,0 +1,8 @@
+# COMPAS workflows deliberately use readable version tags. Require every
+# external action to have a ref while retaining the rest of zizmor's audits.
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        "*": ref-pin
+

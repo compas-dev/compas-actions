@@ -1,0 +1,56 @@
+name: Build CPython Grasshopper components
+description: Create Rhino 8 CPython GHUser components from Python source code
+
+inputs:
+  source:
+    description: Directory containing component source directories
+    required: true
+  target:
+    description: Directory for generated GHUser files
+    required: true
+  prefix:
+    description: Optional prefix added to each component name
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Require Windows
+      shell: pwsh
+      run: |
+        if ($env:RUNNER_OS -ne "Windows") {
+          Write-Error "Grasshopper components can only be built on a Windows runner."
+          exit 1
+        }
+
+    - name: Set up NuGet
+      uses: NuGet/setup-nuget@v4.0
+
+    - name: Install Grasshopper assemblies
+      shell: pwsh
+      run: nuget install Grasshopper -OutputDirectory ./lib -Source https://api.nuget.org/v3/index.json
+
+    - name: Build CPython components
+      shell: pwsh
+      env:
+        PYTHONNET_RUNTIME: coreclr
+        ACTION_PATH: ${{ github.action_path }}
+        COMPONENT_SOURCE: ${{ inputs.source }}
+        COMPONENT_TARGET: ${{ inputs.target }}
+        COMPONENT_PREFIX: ${{ inputs.prefix }}
+      run: |
+        $params = @(
+          "$env:ACTION_PATH/componentize_cpy.py",
+          $env:COMPONENT_SOURCE,
+          $env:COMPONENT_TARGET,
+          "--ghio",
+          "./lib"
+        )
+        if ($env:COMPONENT_PREFIX) {
+          $params += @("--prefix", $env:COMPONENT_PREFIX)
+        }
+        python @params
+
+branding:
+  icon: box
+  color: orange

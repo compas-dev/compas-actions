@@ -1,0 +1,31 @@
+name: docs
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: compas-dev/compas-actions/mkdocs@main
+        with:
+          extras: docs
+
+  deploy:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: compas-dev/compas-actions/mkdocs@main
+        with:
+          deploy: true
+          extras: docs
+

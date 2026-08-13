@@ -1,0 +1,27 @@
+name: Grasshopper components
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  components:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: compas-dev/compas-actions/setup-python@main
+        with:
+          python-version: "3.12"
+          extras: dev
+      - uses: compas-dev/compas-actions/ghpython-components@main
+        with:
+          source: src/compas_ghpython/components
+          target: dist/ghuser
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: grasshopper-components
+          path: dist/ghuser

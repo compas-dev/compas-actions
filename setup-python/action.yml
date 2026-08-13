@@ -1,0 +1,103 @@
+name: Setup Python project
+description: Set up Python and install a COMPAS project with uv, pip, or Conda
+
+inputs:
+  python-version:
+    description: Python version to install
+    default: "3.12"
+  management-tool:
+    description: Dependency manager (uv, pip, or conda)
+    default: uv
+  extras:
+    description: Comma-separated editable-install extras; leave empty for no extras
+    default: dev
+  conda-environment:
+    description: Name of the Conda environment
+    default: compas
+  environment-file:
+    description: Explicit Conda environment file; OS-specific files are detected when omitted
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        MANAGEMENT_TOOL: ${{ inputs.management-tool }}
+      run: |
+        case "$MANAGEMENT_TOOL" in
+          uv|pip|conda) ;;
+          *) echo "::error::management-tool must be uv, pip, or conda"; exit 1 ;;
+        esac
+
+    - name: Set up Python
+      if: inputs.management-tool != 'conda'
+      uses: actions/setup-python@v7.0.0
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Set up uv
+      if: inputs.management-tool == 'uv'
+      uses: astral-sh/setup-uv@v10.0.0
+
+    - name: Install project
+      if: inputs.management-tool != 'conda'
+      shell: bash
+      env:
+        EXTRAS: ${{ inputs.extras }}
+        MANAGEMENT_TOOL: ${{ inputs.management-tool }}
+      run: |
+        requirement="."
+        if [[ -n "$EXTRAS" ]]; then
+          requirement=".[$EXTRAS]"
+        fi
+
+        if [[ "$MANAGEMENT_TOOL" == "uv" ]]; then
+          uv pip install --system -e "$requirement"
+        else
+          python -m pip install --upgrade pip
+          python -m pip install -e "$requirement"
+        fi
+
+    - name: Set up Conda
+      if: inputs.management-tool == 'conda'
+      uses: conda-incubator/setup-miniconda@v4.0.1
+      with:
+        miniconda-version: latest
+        channels: conda-forge
+        activate-environment: ${{ inputs.conda-environment }}
+        python-version: ${{ inputs.python-version }}
+
+    - name: Select Conda environment file
+      if: inputs.management-tool == 'conda'
+      id: conda-file
+      shell: bash -el {0}
+      env:
+        EXPLICIT_FILE: ${{ inputs.environment-file }}
+      run: |
+        if [[ -n "$EXPLICIT_FILE" ]]; then
+          candidate="$EXPLICIT_FILE"
+        elif [[ "$RUNNER_OS" == "Windows" && -f env_win.yml ]]; then
+          candidate=env_win.yml
+        elif [[ "$RUNNER_OS" == "macOS" && -f env_osx.yml ]]; then
+          candidate=env_osx.yml
+        elif [[ "$RUNNER_OS" == "Linux" && -f env_linux.yml ]]; then
+          candidate=env_linux.yml
+        else
+          candidate=environment.yml
+        fi
+
+        if [[ ! -f "$candidate" ]]; then
+          echo "::error::Conda environment file not found: $candidate"
+          exit 1
+        fi
+        echo "path=$candidate" >> "$GITHUB_OUTPUT"
+
+    - name: Install Conda environment
+      if: inputs.management-tool == 'conda'
+      shell: bash -el {0}
+      env:
+        CONDA_ENVIRONMENT: ${{ inputs.conda-environment }}
+        ENVIRONMENT_FILE: ${{ steps.conda-file.outputs.path }}
+      run: conda env update -f "$ENVIRONMENT_FILE" -n "$CONDA_ENVIRONMENT"

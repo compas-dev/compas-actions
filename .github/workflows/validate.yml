@@ -1,0 +1,43 @@
+name: validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  actions:
+    name: Validate actions and workflows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Lint workflows
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
+      - name: Audit workflow security
+        uses: zizmorcore/zizmor-action@v0.6.2
+        with:
+          advanced-security: false
+          persona: regular
+      - uses: actions/setup-python@v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Compile componentizer
+        run: python -m py_compile ghpython-components/componentize_cpy.py
+      - name: Reject removed implementations
+        shell: bash
+        run: |
+          if find . -not -path './.git/*' -type f \( -iname '*ironpython*' -o -iname '*sphinx*' -o -iname '*docversions*' \) | grep -q .; then
+            echo "::error::Legacy implementation found"
+            exit 1
+          fi

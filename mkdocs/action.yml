@@ -1,0 +1,89 @@
+name: Build or deploy MkDocs
+description: Build a MkDocs site or deploy its version with Mike
+
+inputs:
+  python-version:
+    description: Python version used to build documentation
+    default: "3.12"
+  extras:
+    description: Editable-install extras containing MkDocs and Mike
+    default: docs
+  config-file:
+    description: MkDocs configuration file
+    default: mkdocs.yml
+  strict:
+    description: Fail the MkDocs build on warnings
+    default: "true"
+  deploy:
+    description: Deploy with Mike instead of only building
+    default: "false"
+  alias:
+    description: Mike alias updated by tag deployments
+    default: latest
+  pre-build-tasks:
+    description: Space-separated Invoke tasks run before MkDocs or Mike
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v7.0.1
+      with:
+        fetch-depth: ${{ inputs.deploy == 'true' && '0' || '1' }}
+        persist-credentials: false
+
+    - uses: actions/setup-python@v7.0.0
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - uses: astral-sh/setup-uv@v10.0.0
+
+    - name: Install project
+      shell: bash
+      env:
+        EXTRAS: ${{ inputs.extras }}
+      run: uv pip install --system -e ".[$EXTRAS]"
+
+    - name: Prepare documentation sources
+      if: inputs.pre-build-tasks != ''
+      shell: bash
+      env:
+        INVOKE_TASKS: ${{ inputs.pre-build-tasks }}
+      run: invoke $INVOKE_TASKS
+
+    - name: Build documentation
+      if: inputs.deploy != 'true'
+      shell: bash
+      env:
+        CONFIG_FILE: ${{ inputs.config-file }}
+        STRICT_FLAG: ${{ inputs.strict == 'true' && '--strict' || '' }}
+      run: mkdocs build --config-file "$CONFIG_FILE" $STRICT_FLAG
+
+    - name: Configure Git
+      if: inputs.deploy == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        git config user.name github-actions[bot]
+        git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+        gh auth setup-git
+
+    - name: Deploy with Mike
+      if: inputs.deploy == 'true'
+      shell: bash
+      env:
+        ALIAS: ${{ inputs.alias }}
+        CONFIG_FILE: ${{ inputs.config-file }}
+      run: |
+        if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+          version="${GITHUB_REF_NAME#v}"
+          mike deploy --config-file "$CONFIG_FILE" --push --update-aliases "$version" "$ALIAS"
+        elif [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
+          mike deploy --config-file "$CONFIG_FILE" --push "$ALIAS"
+        else
+          echo "::error::Deployment is restricted to main and tags"
+          exit 1
+        fi
+        mike set-default --config-file "$CONFIG_FILE" --push "$ALIAS"
+

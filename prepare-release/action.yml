@@ -1,0 +1,111 @@
+name: Prepare Python release
+description: Build and upload Python distributions plus optional release assets
+
+inputs:
+  python-version:
+    description: Python version used to build distributions
+    default: "3.12"
+  management-tool:
+    description: Dependency manager used for pre-build tasks (uv or pip)
+    default: uv
+  extras:
+    description: Extras needed by pre-build tasks
+    default: dev
+  run-prebuild:
+    description: Run invoke pre-build before packaging
+    default: "false"
+  sdist:
+    description: Build a source distribution
+    default: "true"
+  wheel:
+    description: Build a wheel
+    default: "true"
+  release-assets:
+    description: Optional multiline paths/globs for non-PyPI release assets
+    default: ""
+  distribution-artifact-name:
+    description: Workflow artifact containing Python distributions
+    default: python-package-distributions
+  release-assets-artifact-name:
+    description: Workflow artifact containing additional release assets
+    default: github-release-assets
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v7.0.1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+
+    - uses: actions/setup-python@v7.0.0
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - uses: astral-sh/setup-uv@v10.0.0
+      if: inputs.management-tool == 'uv'
+
+    - name: Validate management tool
+      shell: bash
+      env:
+        MANAGEMENT_TOOL: ${{ inputs.management-tool }}
+      run: |
+        case "$MANAGEMENT_TOOL" in
+          uv|pip) ;;
+          *) echo "::error::management-tool must be uv or pip"; exit 1 ;;
+        esac
+
+    - name: Install project for pre-build
+      if: inputs.run-prebuild == 'true'
+      shell: bash
+      env:
+        EXTRAS: ${{ inputs.extras }}
+        MANAGEMENT_TOOL: ${{ inputs.management-tool }}
+      run: |
+        requirement="."
+        [[ -n "$EXTRAS" ]] && requirement=".[$EXTRAS]"
+        if [[ "$MANAGEMENT_TOOL" == "uv" ]]; then
+          uv pip install --system -e "$requirement"
+        else
+          python -m pip install --upgrade pip
+          python -m pip install -e "$requirement"
+        fi
+        invoke pre-build
+
+    - name: Install packaging tools
+      shell: bash
+      run: python -m pip install --upgrade build twine
+
+    - name: Build and validate distributions
+      shell: bash
+      env:
+        BUILD_SDIST: ${{ inputs.sdist }}
+        BUILD_WHEEL: ${{ inputs.wheel }}
+      run: |
+        args=()
+        [[ "$BUILD_SDIST" == "true" ]] && args+=(--sdist)
+        [[ "$BUILD_WHEEL" == "true" ]] && args+=(--wheel)
+        if [[ ${#args[@]} -eq 0 ]]; then
+          echo "::error::At least one of sdist or wheel must be true"
+          exit 1
+        fi
+        python -m build "${args[@]}"
+        python -m twine check dist/*
+
+    - name: Upload Python distributions
+      uses: actions/upload-artifact@v7.0.1
+      with:
+        name: ${{ inputs.distribution-artifact-name }}
+        path: |
+          dist/*.whl
+          dist/*.tar.gz
+        if-no-files-found: error
+
+    - name: Upload additional release assets
+      if: inputs.release-assets != ''
+      uses: actions/upload-artifact@v7.0.1
+      with:
+        name: ${{ inputs.release-assets-artifact-name }}
+        path: ${{ inputs.release-assets }}
+        if-no-files-found: error
+

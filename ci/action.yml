@@ -1,0 +1,109 @@
+name: Run Python CI
+description: Check out, install, and test a COMPAS project on the caller's runner
+
+inputs:
+  python-version:
+    description: Python version to install
+    default: "3.12"
+  management-tool:
+    description: Dependency manager (uv, pip, or conda)
+    default: uv
+  extras:
+    description: Comma-separated editable-install extras
+    default: dev
+  invoke-tasks:
+    description: Space-separated Invoke tasks; leave empty to skip
+    default: lint test
+  run-prebuild:
+    description: Run invoke pre-build before checks
+    default: "false"
+  check-import:
+    description: Run python -m compas
+    default: "false"
+  submodules:
+    description: Checkout submodules (false, true, or recursive)
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v7.0.1
+      with:
+        persist-credentials: false
+        submodules: ${{ inputs.submodules }}
+
+    - name: Validate management tool
+      shell: bash
+      env:
+        MANAGEMENT_TOOL: ${{ inputs.management-tool }}
+      run: |
+        case "$MANAGEMENT_TOOL" in
+          uv|pip|conda) ;;
+          *) echo "::error::management-tool must be uv, pip, or conda"; exit 1 ;;
+        esac
+
+    - uses: actions/setup-python@v7.0.0
+      if: inputs.management-tool != 'conda'
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - uses: astral-sh/setup-uv@v10.0.0
+      if: inputs.management-tool == 'uv'
+
+    - name: Install project
+      if: inputs.management-tool != 'conda'
+      shell: bash
+      env:
+        EXTRAS: ${{ inputs.extras }}
+        MANAGEMENT_TOOL: ${{ inputs.management-tool }}
+      run: |
+        requirement="."
+        [[ -n "$EXTRAS" ]] && requirement=".[$EXTRAS]"
+        if [[ "$MANAGEMENT_TOOL" == "uv" ]]; then
+          uv pip install --system -e "$requirement"
+        else
+          python -m pip install --upgrade pip
+          python -m pip install -e "$requirement"
+        fi
+
+    - uses: conda-incubator/setup-miniconda@v4.0.1
+      if: inputs.management-tool == 'conda'
+      with:
+        miniconda-version: latest
+        channels: conda-forge
+        activate-environment: compas
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install Conda environment
+      if: inputs.management-tool == 'conda'
+      shell: bash -el {0}
+      run: |
+        if [[ "$RUNNER_OS" == "Windows" && -f env_win.yml ]]; then
+          environment_file=env_win.yml
+        elif [[ "$RUNNER_OS" == "macOS" && -f env_osx.yml ]]; then
+          environment_file=env_osx.yml
+        elif [[ "$RUNNER_OS" == "Linux" && -f env_linux.yml ]]; then
+          environment_file=env_linux.yml
+        else
+          environment_file=environment.yml
+        fi
+        test -f "$environment_file" || { echo "::error::No Conda environment file found"; exit 1; }
+        conda env update -f "$environment_file" -n compas
+
+    - name: Run pre-build
+      if: inputs.run-prebuild == 'true'
+      shell: bash -el {0}
+      run: invoke pre-build
+
+    - name: Check import
+      if: inputs.check-import == 'true'
+      shell: bash -el {0}
+      run: python -m compas
+
+    - name: Run checks
+      if: inputs.invoke-tasks != ''
+      shell: bash -el {0}
+      env:
+        INVOKE_TASKS: ${{ inputs.invoke-tasks }}
+      run: invoke $INVOKE_TASKS
+
