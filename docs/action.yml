@@ -1,4 +1,4 @@
-name: Build or deploy MkDocs
+name: Build or deploy documentation
 description: Build a MkDocs site or deploy its version with Mike
 
 inputs:

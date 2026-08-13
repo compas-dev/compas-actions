@@ -8,7 +8,7 @@ The previous repositories mix orchestration, tooling, and permissions:
 | --- | --- | --- |
 | `compas-actions.build` | checkout, environment setup, pre-build, lint, test, import checks, Grasshopper | `ci`, `setup-python`, `ghpython-components` |
 | `compas-actions.publish` | changelog, release, Grasshopper, package build, token upload | `prepare-release`, caller-owned OIDC publish, `github-release` |
-| `compas-actions.docs` | environment setup, Sphinx/MkDocs build and deployment | `mkdocs` |
+| `compas-actions.docs` | environment setup, Sphinx/MkDocs build and deployment | `docs` |
 | `compas-actions.docversions` | mutate a Sphinx-style `gh-pages` tree | intentionally retired |
 | `compas-actions.ghpython_components` | IronPython/CPython component generation | Rhino 8 CPython-only `ghpython-components` |
 
@@ -24,7 +24,7 @@ Every public automation is a composite action in a named directory:
 compas-actions/ci@v1
 compas-actions/prepare-release@v1
 compas-actions/github-release@v1
-compas-actions/mkdocs@v1
+compas-actions/docs@v1
 compas-actions/pr-checks@v1
 ```
 

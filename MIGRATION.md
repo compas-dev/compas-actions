@@ -69,7 +69,7 @@ workflow and environment names exactly match the caller.
 ## Documentation
 
 `compas-actions.docs` and `compas-actions.docversions` are replaced by the
-`mkdocs` action. Sphinx sites must migrate to MkDocs before using the new
+`docs` action. Sphinx sites must migrate to MkDocs before using the new
 repository.
 
 ## Grasshopper components

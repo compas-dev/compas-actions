@@ -14,7 +14,7 @@ is a clean break rather than a compatibility bundle.
 | `ci` | Check out, install, and test one Python/OS combination |
 | `prepare-release` | Build distributions and upload release artifacts |
 | `github-release` | Download artifacts and create a tagged GitHub release |
-| `mkdocs` | Build MkDocs or deploy a version with Mike |
+| `docs` | Build MkDocs or deploy a version with Mike |
 | `pr-checks` | Require a changelog update or an explicit skip label |
 | `setup-python` | Prepare a custom uv, pip, or Conda job |
 | `package` | Build and validate distributions in a custom job |
