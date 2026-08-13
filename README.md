@@ -20,7 +20,7 @@ is a clean break rather than a compatibility bundle.
 | `pr-checks` | Require a changelog update or an explicit skip label |
 | `setup-python` | Prepare a custom uv, pip, or Conda job |
 | `package` | Build and validate distributions in a custom job |
-| `ghpython-components` | Build Rhino 8 CPython Grasshopper components |
+| `ghpython-components` | Build Rhino 8 CPython components with `ghpython_componentizer` |
 
 Every public entry point uses the regular action syntax:
 
@@ -116,7 +116,8 @@ the readable `@v1` release tag after the first release.
 - hidden publishing or permission escalation
 
 Documentation uses MkDocs and Mike. Grasshopper generation targets Rhino 8
-CPython and CoreCLR only.
+CPython only and delegates component generation to
+[`ghpython_componentizer`](https://github.com/compas-dev/ghpython_componentizer).
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the design and
 [MIGRATION.md](MIGRATION.md) for the old-to-new mapping.

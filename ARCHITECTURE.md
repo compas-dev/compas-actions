@@ -10,7 +10,7 @@ The previous repositories mix orchestration, tooling, and permissions:
 | `compas-actions.publish` | changelog, release, Grasshopper, package build, token upload | `prepare-release`, caller-owned OIDC publish, `github-release` |
 | `compas-actions.docs` | environment setup, Sphinx/MkDocs build and deployment | `docs` |
 | `compas-actions.docversions` | mutate a Sphinx-style `gh-pages` tree | intentionally retired |
-| `compas-actions.ghpython_components` | IronPython/CPython component generation | Rhino 8 CPython-only `ghpython-components` |
+| `compas-actions.ghpython_components` | IronPython/CPython component generation | Rhino 8 CPython-only `ghpython-components`, backed by the standalone `ghpython_componentizer` package |
 
 Representative consumers include pure-Python matrices, OS-specific Conda
 environments, `cibuildwheel` packages, generated protobuf archives, and Windows
@@ -67,5 +67,5 @@ version. A movable major tag (`v1`) is the shared, readable consumer interface.
 
 The first major version targets supported GitHub-hosted runners, current action
 runtimes, uv/pip, optional Conda for native packages, PyPI Trusted Publishing,
-MkDocs/Mike, and Rhino 8 CPython/CoreCLR. It contains no compatibility wrapper,
+MkDocs/Mike, and Rhino 8 CPython. It contains no compatibility wrapper,
 IronPython implementation, Sphinx implementation, or API-token publisher.

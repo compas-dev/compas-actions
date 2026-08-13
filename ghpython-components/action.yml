@@ -11,6 +11,12 @@ inputs:
   prefix:
     description: Optional prefix added to each component name
     default: ""
+  version:
+    description: Optional package version substituted into component templates
+    default: ""
+  componentizer-ref:
+    description: ghpython_componentizer Git tag or branch to install
+    default: main
 
 runs:
   using: composite
@@ -23,33 +29,37 @@ runs:
           exit 1
         }
 
-    - name: Set up NuGet
-      uses: NuGet/setup-nuget@v4.0
-
-    - name: Install Grasshopper assemblies
+    - name: Install ghpython_componentizer
       shell: pwsh
-      run: nuget install Grasshopper -OutputDirectory ./lib -Source https://api.nuget.org/v3/index.json
+      env:
+        COMPONENTIZER_REF: ${{ inputs.componentizer-ref }}
+      run: |
+        if ($env:COMPONENTIZER_REF -notmatch '^[A-Za-z0-9._/-]+$') {
+          Write-Error "componentizer-ref contains unsupported characters."
+          exit 1
+        }
+        $requirement = "ghpython_componentizer @ git+https://github.com/compas-dev/ghpython_componentizer.git@$env:COMPONENTIZER_REF"
+        python -m pip install --disable-pip-version-check $requirement
 
     - name: Build CPython components
       shell: pwsh
       env:
-        PYTHONNET_RUNTIME: coreclr
-        ACTION_PATH: ${{ github.action_path }}
         COMPONENT_SOURCE: ${{ inputs.source }}
         COMPONENT_TARGET: ${{ inputs.target }}
         COMPONENT_PREFIX: ${{ inputs.prefix }}
+        COMPONENT_VERSION: ${{ inputs.version }}
       run: |
         $params = @(
-          "$env:ACTION_PATH/componentize_cpy.py",
           $env:COMPONENT_SOURCE,
-          $env:COMPONENT_TARGET,
-          "--ghio",
-          "./lib"
+          $env:COMPONENT_TARGET
         )
+        if ($env:COMPONENT_VERSION) {
+          $params += @("--version", $env:COMPONENT_VERSION)
+        }
         if ($env:COMPONENT_PREFIX) {
           $params += @("--prefix", $env:COMPONENT_PREFIX)
         }
-        python @params
+        python -m ghpython_componentizer @params
 
 branding:
   icon: box

@@ -84,8 +84,9 @@ repository.
 
 `compas-actions.ghpython_components` is replaced by `ghpython-components`.
 Only Rhino 8 CPython components are supported. The action is self-contained for
-NuGet/Grasshopper assembly setup and must run on Windows after the Python project
-dependencies have been installed.
+installing the standalone `ghpython_componentizer` package and must run on
+Windows after Python has been installed. The package downloads the required
+Grasshopper assembly itself.
 
 ## Versioning and rollout
 

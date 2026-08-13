@@ -34,7 +34,6 @@ jobs:
           python-version: "3.13"
       - name: Compile Python helpers
         run: |
-          python -m py_compile ghpython-components/componentize_cpy.py
           python -m py_compile release-pr/prepare_changelog.py
           python -m py_compile release-check/check_release.py
       - name: Reject removed implementations
@@ -44,3 +43,33 @@ jobs:
             echo "::error::Legacy implementation found"
             exit 1
           fi
+
+  componentizer:
+    name: Test standalone componentizer integration
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v7.0.1
+        with:
+          repository: compas-dev/ghpython_componentizer
+          ref: main
+          path: componentizer-fixture
+          persist-credentials: false
+      - uses: actions/setup-python@v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: ./ghpython-components
+        with:
+          source: componentizer-fixture/examples/cpy
+          target: ${{ runner.temp }}/ghuser
+          componentizer-ref: main
+      - name: Verify generated components
+        shell: pwsh
+        run: |
+          $components = Get-ChildItem "${{ runner.temp }}/ghuser" -Filter *.ghuser
+          if ($components.Count -eq 0) {
+            Write-Error "The componentizer did not generate any .ghuser files."
+            exit 1
+          }
