@@ -18,7 +18,7 @@ is a clean break rather than a compatibility bundle.
 | `github-release` | Download artifacts and create a tagged GitHub release |
 | `docs` | Build MkDocs or deploy a version with Mike |
 | `pr-checks` | Require a changelog update or an explicit skip label |
-| `setup-python` | Prepare a custom uv, pip, or Conda job |
+| `setup-python` | Prepare a custom uv or Conda job |
 | `package` | Build and validate distributions in a custom job |
 | `ghpython-components` | Build Rhino 8 CPython components with `ghpython_componentizer` |
 

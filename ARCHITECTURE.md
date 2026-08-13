@@ -66,6 +66,6 @@ version. A movable major tag (`v1`) is the shared, readable consumer interface.
 ## Modern-only boundary
 
 The first major version targets supported GitHub-hosted runners, current action
-runtimes, uv/pip, optional Conda for native packages, PyPI Trusted Publishing,
+runtimes, uv, optional Conda for native packages, PyPI Trusted Publishing,
 MkDocs/Mike, and Rhino 8 CPython. It contains no compatibility wrapper,
 IronPython implementation, Sphinx implementation, or API-token publisher.

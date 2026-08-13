@@ -1,12 +1,12 @@
 name: Setup Python project
-description: Set up Python and install a COMPAS project with uv, pip, or Conda
+description: Set up Python and install a COMPAS project with uv or Conda
 
 inputs:
   python-version:
     description: Python version to install
     default: "3.12"
   management-tool:
-    description: Dependency manager (uv, pip, or conda)
+    description: Dependency manager (uv or conda)
     default: uv
   extras:
     description: Comma-separated editable-install extras; leave empty for no extras
@@ -27,12 +27,12 @@ runs:
         MANAGEMENT_TOOL: ${{ inputs.management-tool }}
       run: |
         case "$MANAGEMENT_TOOL" in
-          uv|pip|conda) ;;
-          *) echo "::error::management-tool must be uv, pip, or conda"; exit 1 ;;
+          uv|conda) ;;
+          *) echo "::error::management-tool must be uv or conda"; exit 1 ;;
         esac
 
     - name: Set up Python
-      if: inputs.management-tool != 'conda'
+      if: inputs.management-tool == 'uv'
       uses: actions/setup-python@v7.0.0
       with:
         python-version: ${{ inputs.python-version }}
@@ -42,23 +42,16 @@ runs:
       uses: astral-sh/setup-uv@v10.0.0
 
     - name: Install project
-      if: inputs.management-tool != 'conda'
+      if: inputs.management-tool == 'uv'
       shell: bash
       env:
         EXTRAS: ${{ inputs.extras }}
-        MANAGEMENT_TOOL: ${{ inputs.management-tool }}
       run: |
         requirement="."
         if [[ -n "$EXTRAS" ]]; then
           requirement=".[$EXTRAS]"
         fi
-
-        if [[ "$MANAGEMENT_TOOL" == "uv" ]]; then
-          uv pip install --system -e "$requirement"
-        else
-          python -m pip install --upgrade pip
-          python -m pip install -e "$requirement"
-        fi
+        uv pip install --system -e "$requirement"
 
     - name: Set up Conda
       if: inputs.management-tool == 'conda'

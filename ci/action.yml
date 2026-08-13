@@ -6,7 +6,7 @@ inputs:
     description: Python version to install
     default: "3.12"
   management-tool:
-    description: Dependency manager (uv, pip, or conda)
+    description: Dependency manager (uv or conda)
     default: uv
   extras:
     description: Comma-separated editable-install extras
@@ -38,12 +38,12 @@ runs:
         MANAGEMENT_TOOL: ${{ inputs.management-tool }}
       run: |
         case "$MANAGEMENT_TOOL" in
-          uv|pip|conda) ;;
-          *) echo "::error::management-tool must be uv, pip, or conda"; exit 1 ;;
+          uv|conda) ;;
+          *) echo "::error::management-tool must be uv or conda"; exit 1 ;;
         esac
 
     - uses: actions/setup-python@v7.0.0
-      if: inputs.management-tool != 'conda'
+      if: inputs.management-tool == 'uv'
       with:
         python-version: ${{ inputs.python-version }}
 
@@ -51,20 +51,14 @@ runs:
       if: inputs.management-tool == 'uv'
 
     - name: Install project
-      if: inputs.management-tool != 'conda'
+      if: inputs.management-tool == 'uv'
       shell: bash
       env:
         EXTRAS: ${{ inputs.extras }}
-        MANAGEMENT_TOOL: ${{ inputs.management-tool }}
       run: |
         requirement="."
         [[ -n "$EXTRAS" ]] && requirement=".[$EXTRAS]"
-        if [[ "$MANAGEMENT_TOOL" == "uv" ]]; then
-          uv pip install --system -e "$requirement"
-        else
-          python -m pip install --upgrade pip
-          python -m pip install -e "$requirement"
-        fi
+        uv pip install --system -e "$requirement"
 
     - uses: conda-incubator/setup-miniconda@v4.0.1
       if: inputs.management-tool == 'conda'
@@ -106,4 +100,3 @@ runs:
       env:
         INVOKE_TASKS: ${{ inputs.invoke-tasks }}
       run: invoke $INVOKE_TASKS
-
