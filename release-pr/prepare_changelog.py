@@ -15,7 +15,7 @@ def main() -> None:
     args = parser.parse_args()
 
     content = args.changelog.read_text(encoding="utf-8")
-    release_heading = re.compile(rf"^## \[{re.escape(args.version)}\] \d{{4}}-\d{{2}}-\d{{2}}$", re.MULTILINE)
+    release_heading = re.compile(rf"^## \[{re.escape(args.version)}\] (?:- )?\d{{4}}-\d{{2}}-\d{{2}}$", re.MULTILINE)
     matches = list(release_heading.finditer(content))
     if len(matches) != 1:
         raise SystemExit(f"Expected one release heading for {args.version}, found {len(matches)}")

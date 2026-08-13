@@ -36,6 +36,9 @@ jobs:
         run: |
           python -m py_compile release-pr/prepare_changelog.py
           python -m py_compile release-check/check_release.py
+
+      - name: Test release helpers
+        run: python -m unittest discover -s tests
       - name: Reject removed implementations
         shell: bash
         run: |

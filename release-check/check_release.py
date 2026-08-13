@@ -85,7 +85,7 @@ def main() -> None:
     changelog = read_at(args.head, args.changelog).decode()
     if len(re.findall(r"^## Unreleased$", changelog, re.MULTILINE)) != 1:
         raise SystemExit("The changelog must contain exactly one Unreleased section")
-    release_heading = re.compile(rf"^## \[{re.escape(new_version)}\] \d{{4}}-\d{{2}}-\d{{2}}$", re.MULTILINE)
+    release_heading = re.compile(rf"^## \[{re.escape(new_version)}\] (?:- )?\d{{4}}-\d{{2}}-\d{{2}}$", re.MULTILINE)
     if len(release_heading.findall(changelog)) != 1:
         raise SystemExit(f"The changelog must contain exactly one release heading for {new_version}")
 
