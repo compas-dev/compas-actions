@@ -25,7 +25,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python: ["3.10", "3.11", "3.12", "3.13"]
     steps:
-      - uses: compas-dev/compas-actions/ci@main
+      - uses: compas-dev/compas-actions/ci@v1
         with:
           python-version: ${{ matrix.python }}
           invoke-tasks: lint test
@@ -42,7 +42,7 @@ the pull request diff directly and supports the same skip-label policy without
 requiring a GitHub token or a legacy Node action:
 
 ```yaml
-- uses: compas-dev/compas-actions/pr-checks@main
+- uses: compas-dev/compas-actions/pr-checks@v1
   with:
     changelog-path: CHANGELOG.md
     skip-label: no changelog

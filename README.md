@@ -25,7 +25,7 @@ is a clean break rather than a compatibility bundle.
 Every public entry point uses the regular action syntax:
 
 ```yaml
-- uses: compas-dev/compas-actions/ci@main
+- uses: compas-dev/compas-actions/ci@v1
 ```
 
 The calling workflow owns its runner, matrix, environment, dependencies, and
@@ -43,7 +43,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python: ["3.11", "3.12", "3.13"]
     steps:
-      - uses: compas-dev/compas-actions/ci@main
+      - uses: compas-dev/compas-actions/ci@v1
         with:
           python-version: ${{ matrix.python }}
           invoke-tasks: lint test
