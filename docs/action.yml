@@ -33,7 +33,7 @@ runs:
     - uses: actions/checkout@v7.0.1
       with:
         fetch-depth: ${{ inputs.deploy == 'true' && '0' || '1' }}
-        persist-credentials: false
+        persist-credentials: ${{ inputs.deploy == 'true' }}
 
     - uses: actions/setup-python@v7.0.0
       with:
@@ -65,12 +65,9 @@ runs:
     - name: Configure Git
       if: inputs.deploy == 'true'
       shell: bash
-      env:
-        GH_TOKEN: ${{ github.token }}
       run: |
         git config user.name github-actions[bot]
         git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-        gh auth setup-git
 
     - name: Deploy with Mike
       if: inputs.deploy == 'true'
