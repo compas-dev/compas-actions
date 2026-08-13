@@ -137,7 +137,16 @@ runs:
           exit 1
         fi
         python -m build "${args[@]}"
-        python -m twine check dist/*
+
+        distributions=()
+        while IFS= read -r -d '' distribution; do
+          distributions+=("$distribution")
+        done < <(find dist -maxdepth 1 -type f \( -name '*.whl' -o -name '*.tar.gz' \) -print0)
+        if [[ ${#distributions[@]} -eq 0 ]]; then
+          echo "::error::The build did not create any Python distributions"
+          exit 1
+        fi
+        python -m twine check "${distributions[@]}"
 
     - name: Upload Python distributions
       uses: actions/upload-artifact@v7.0.1
