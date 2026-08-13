@@ -2,13 +2,25 @@ name: release
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
 
 permissions:
   contents: read
 
 jobs:
+  release-change:
+    runs-on: ubuntu-latest
+    outputs:
+      is-release: ${{ steps.release.outputs.is-release }}
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: compas-dev/compas-actions/release-check@main
+        id: release
+
   test:
+    needs: release-change
+    if: needs.release-change.outputs.is-release == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -21,7 +33,8 @@ jobs:
           python-version: ${{ matrix.python }}
 
   prepare:
-    needs: test
+    needs: [release-change, test]
+    if: needs.release-change.outputs.is-release == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: compas-dev/compas-actions/prepare-release@main
@@ -30,7 +43,8 @@ jobs:
           release-assets: dist/proto/*.zip
 
   publish:
-    needs: prepare
+    needs: [release-change, prepare]
+    if: needs.release-change.outputs.is-release == 'true'
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -46,7 +60,8 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@v1.14.2
 
   release:
-    needs: publish
+    needs: [release-change, publish]
+    if: needs.release-change.outputs.is-release == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -54,5 +69,6 @@ jobs:
       - uses: compas-dev/compas-actions/github-release@main
         with:
           github-token: ${{ github.token }}
+          tag-name: ${{ needs.release-change.outputs.tag }}
+          target: ${{ github.sha }}
           release-assets-artifact-name: github-release-assets
-

@@ -52,11 +52,19 @@ requiring a GitHub token or a legacy Node action:
 
 `compas-actions.publish` combined unrelated trust boundaries. Replace it with:
 
-1. `prepare-release`, called from a read-only job, which builds and uploads
+1. A caller-owned manual workflow that invokes `release-pr` with an explicit
+   SemVer component and opens a reviewable `release/vX.Y.Z` pull request.
+2. `release-check`, called from PR checks and from the `main` push workflow, to
+   validate and detect the merged version change.
+3. `prepare-release`, called from a read-only job, which builds and uploads
    workflow artifacts.
-2. A caller-owned `pypa/gh-action-pypi-publish` job using OIDC.
-3. `github-release`, called from a `contents: write` job only after PyPI
+4. A caller-owned `pypa/gh-action-pypi-publish` job using OIDC.
+5. `github-release`, called from a `contents: write` job only after PyPI
    succeeds.
+
+The release PR preserves a manually written Keep a Changelog file. The merge
+strategy does not affect versioning because the release is detected from the
+version configuration and changelog in the merged tree, not commit messages.
 
 Generated files belong in an `invoke pre-build` task. Pass their paths through
 `release-assets`; the preparation job builds once and uploads package and extra

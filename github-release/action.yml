@@ -5,6 +5,12 @@ inputs:
   github-token:
     description: "GitHub token with contents: write"
     required: true
+  tag-name:
+    description: Tag to create; defaults to the current tag ref
+    default: ""
+  target:
+    description: Commit or branch targeted when creating a new tag
+    default: ""
   release-name-prefix:
     description: Prefix before the version, for example COMPAS
     default: ""
@@ -27,15 +33,26 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Validate release ref
+    - name: Resolve release tag
       id: ref
       shell: bash
+      env:
+        EXPLICIT_TAG: ${{ inputs.tag-name }}
       run: |
-        if [[ "$GITHUB_REF_TYPE" != "tag" ]]; then
+        tag="$EXPLICIT_TAG"
+        if [[ -z "$tag" && "$GITHUB_REF_TYPE" == "tag" ]]; then
+          tag="$GITHUB_REF_NAME"
+        fi
+        if [[ -z "$tag" ]]; then
           echo "::error::GitHub releases must be created from a tag, not '$GITHUB_REF'"
           exit 1
         fi
-        echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        if [[ "$tag" != v* ]]; then
+          echo "::error::Release tags must start with v: '$tag'"
+          exit 1
+        fi
+        echo "tag=$tag" >> "$GITHUB_OUTPUT"
+        echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
 
     - uses: actions/checkout@v7.0.1
       with:
@@ -69,12 +86,13 @@ runs:
       shell: bash
       env:
         PREFIX: ${{ inputs.release-name-prefix }}
+        TAG: ${{ steps.ref.outputs.tag }}
       run: |
-        version="${GITHUB_REF_NAME#v}"
+        version="${TAG#v}"
         if [[ -n "$PREFIX" ]]; then
           name="$PREFIX $version"
         else
-          name="$GITHUB_REF_NAME"
+          name="$TAG"
         fi
         echo "name=$name" >> "$GITHUB_OUTPUT"
 
@@ -86,8 +104,13 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
         RELEASE_NAME: ${{ steps.release.outputs.name }}
         RELEASE_NOTES: ${{ steps.changelog.outputs.changes }}
+        TAG: ${{ steps.ref.outputs.tag }}
+        TARGET: ${{ inputs.target }}
       run: |
-        args=(release create "$GITHUB_REF_NAME" --title "$RELEASE_NAME")
+        args=(release create "$TAG" --title "$RELEASE_NAME")
+        if [[ -n "$TARGET" ]]; then
+          args+=(--target "$TARGET")
+        fi
         if [[ "$GENERATE_RELEASE_NOTES" == "true" ]]; then
           args+=(--generate-notes)
         else

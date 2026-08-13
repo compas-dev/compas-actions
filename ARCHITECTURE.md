@@ -26,6 +26,8 @@ compas-actions/prepare-release@v1
 compas-actions/github-release@v1
 compas-actions/docs@v1
 compas-actions/pr-checks@v1
+compas-actions/release-pr@v1
+compas-actions/release-check@v1
 ```
 
 Callers define job structure. In particular, callers own `runs-on`, matrix
@@ -38,6 +40,12 @@ There are no public reusable workflows and no generic shell-command action.
 ## Release data flow
 
 ```text
+workflow_dispatch
+  -> release-pr (contents: write, pull-requests: write; no publishing identity)
+       -> reviewed release/vX.Y.Z pull request
+            -> merge to main
+                 -> release-check
+
 CI job (contents: read)
   -> prepare job (contents: read)
        -> python-package-distributions artifact

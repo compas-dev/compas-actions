@@ -1,0 +1,77 @@
+name: Check release change
+description: Detect and validate a repository-owned release version change
+
+inputs:
+  config-file:
+    description: bump-my-version configuration file
+    default: pyproject.toml
+  changelog-path:
+    description: Keep a Changelog file
+    default: CHANGELOG.md
+
+outputs:
+  is-release:
+    description: Whether the compared revisions contain a version change
+    value: ${{ steps.check.outputs.is-release }}
+  version:
+    description: Validated release version
+    value: ${{ steps.check.outputs.version }}
+  tag:
+    description: Validated release tag
+    value: ${{ steps.check.outputs.tag }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v7.0.1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+
+    - uses: actions/setup-python@v7.0.0
+      with:
+        python-version: "3.12"
+
+    - name: Detect comparison revisions
+      id: revisions
+      shell: bash
+      run: |
+        case "$GITHUB_EVENT_NAME" in
+          pull_request)
+            echo "base=$(jq --raw-output '.pull_request.base.sha' "$GITHUB_EVENT_PATH")" >> "$GITHUB_OUTPUT"
+            echo "head=$(jq --raw-output '.pull_request.head.sha' "$GITHUB_EVENT_PATH")" >> "$GITHUB_OUTPUT"
+            echo "branch=$(jq --raw-output '.pull_request.head.ref' "$GITHUB_EVENT_PATH")" >> "$GITHUB_OUTPUT"
+            ;;
+          push)
+            echo "base=$(jq --raw-output '.before' "$GITHUB_EVENT_PATH")" >> "$GITHUB_OUTPUT"
+            echo "head=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+            echo "branch=" >> "$GITHUB_OUTPUT"
+            ;;
+          *)
+            echo "::error::release-check supports pull_request and push events"
+            exit 1
+            ;;
+        esac
+
+    - name: Validate release metadata
+      id: check
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        BASE_REF: ${{ steps.revisions.outputs.base }}
+        CHANGELOG_PATH: ${{ inputs.changelog-path }}
+        CONFIG_FILE: ${{ inputs.config-file }}
+        HEAD_REF: ${{ steps.revisions.outputs.head }}
+        PR_BRANCH: ${{ steps.revisions.outputs.branch }}
+      run: |
+        python "$ACTION_PATH/check_release.py" \
+          --base "$BASE_REF" \
+          --head "$HEAD_REF" \
+          --config "$CONFIG_FILE" \
+          --changelog "$CHANGELOG_PATH" \
+          --pull-request-branch "$PR_BRANCH" \
+          --output "$GITHUB_OUTPUT"
+
+branding:
+  icon: check-circle
+  color: green

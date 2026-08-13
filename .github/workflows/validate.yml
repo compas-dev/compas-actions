@@ -32,8 +32,11 @@ jobs:
       - uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.13"
-      - name: Compile componentizer
-        run: python -m py_compile ghpython-components/componentize_cpy.py
+      - name: Compile Python helpers
+        run: |
+          python -m py_compile ghpython-components/componentize_cpy.py
+          python -m py_compile release-pr/prepare_changelog.py
+          python -m py_compile release-check/check_release.py
       - name: Reject removed implementations
         shell: bash
         run: |

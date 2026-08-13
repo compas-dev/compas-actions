@@ -9,6 +9,11 @@ permissions:
   contents: read
 
 jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: compas-dev/compas-actions/release-check@main
+
   changelog:
     runs-on: ubuntu-latest
     steps:
@@ -16,4 +21,3 @@ jobs:
         with:
           changelog-path: CHANGELOG.md
           skip-label: no changelog
-

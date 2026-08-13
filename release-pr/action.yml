@@ -1,0 +1,136 @@
+name: Open release pull request
+description: Bump a Python project version and open a repository-owned release pull request
+
+inputs:
+  release-type:
+    description: Semantic version component to bump (patch, minor, or major)
+    required: true
+  github-token:
+    description: Token with contents and pull-requests write access
+    required: true
+  base-branch:
+    description: Branch targeted by the release pull request
+    default: ""
+  config-file:
+    description: bump-my-version configuration file
+    default: pyproject.toml
+  changelog-path:
+    description: Keep a Changelog file containing an Unreleased section
+    default: CHANGELOG.md
+
+outputs:
+  version:
+    description: Prepared release version
+    value: ${{ steps.prepare.outputs.version }}
+  branch:
+    description: Release pull request branch
+    value: ${{ steps.prepare.outputs.branch }}
+  pull-request-url:
+    description: Created pull request URL
+    value: ${{ steps.pull-request.outputs.url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve base branch
+      id: base
+      shell: bash
+      env:
+        EXPLICIT_BASE: ${{ inputs.base-branch }}
+        DEFAULT_BASE: ${{ github.event.repository.default_branch }}
+      run: |
+        base="$EXPLICIT_BASE"
+        [[ -n "$base" ]] || base="$DEFAULT_BASE"
+        if [[ -z "$base" ]]; then
+          echo "::error::Unable to determine the repository default branch"
+          exit 1
+        fi
+        echo "branch=$base" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/checkout@v7.0.1
+      with:
+        ref: ${{ steps.base.outputs.branch }}
+        fetch-depth: 0
+        persist-credentials: false
+        token: ${{ inputs.github-token }}
+
+    - uses: actions/setup-python@v7.0.0
+      with:
+        python-version: "3.12"
+
+    - uses: astral-sh/setup-uv@v10.0.0
+
+    - name: Prepare release metadata
+      id: prepare
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        CHANGELOG_PATH: ${{ inputs.changelog-path }}
+        CONFIG_FILE: ${{ inputs.config-file }}
+        RELEASE_TYPE: ${{ inputs.release-type }}
+      run: |
+        case "$RELEASE_TYPE" in
+          patch|minor|major) ;;
+          *) echo "::error::release-type must be patch, minor, or major"; exit 1 ;;
+        esac
+
+        bump=(uvx --from bump-my-version==1.3.0 bump-my-version)
+        version=$("${bump[@]}" show --config-file "$CONFIG_FILE" new_version --increment "$RELEASE_TYPE")
+        branch="release/v$version"
+
+        if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+          echo "::error::Release branch '$branch' already exists"
+          exit 1
+        fi
+
+        "${bump[@]}" bump --config-file "$CONFIG_FILE" "$RELEASE_TYPE" --no-commit --no-tag
+        python "$ACTION_PATH/prepare_changelog.py" "$CHANGELOG_PATH" "$version"
+
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+        echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+    - name: Commit release preparation
+      shell: bash
+      env:
+        BRANCH: ${{ steps.prepare.outputs.branch }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        VERSION: ${{ steps.prepare.outputs.version }}
+      run: |
+        git switch -c "$BRANCH"
+        git config user.name github-actions[bot]
+        git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+        git add --update
+        if git diff --cached --quiet; then
+          echo "::error::Preparing v$VERSION did not change any tracked files"
+          exit 1
+        fi
+        git commit -m "Prepare release v$VERSION"
+        gh auth setup-git
+        git push --set-upstream origin "$BRANCH"
+
+    - name: Open release pull request
+      id: pull-request
+      shell: bash
+      env:
+        BASE_BRANCH: ${{ steps.base.outputs.branch }}
+        BRANCH: ${{ steps.prepare.outputs.branch }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        VERSION: ${{ steps.prepare.outputs.version }}
+      run: |
+        body="$RUNNER_TEMP/release-pr.md"
+        printf '%s\n' \
+          "## Release v$VERSION" \
+          "" \
+          "Review the version and changelog. Merging this pull request publishes the release." \
+          > "$body"
+        url=$(gh pr create \
+          --base "$BASE_BRANCH" \
+          --head "$BRANCH" \
+          --title "Release v$VERSION" \
+          --body-file "$body")
+        echo "url=$url" >> "$GITHUB_OUTPUT"
+        echo "Created $url"
+
+branding:
+  icon: git-pull-request
+  color: blue

@@ -12,6 +12,8 @@ is a clean break rather than a compatibility bundle.
 | Action | Responsibility |
 | --- | --- |
 | `ci` | Check out, install, and test one Python/OS combination |
+| `release-pr` | Bump the version and open a human-reviewed release PR |
+| `release-check` | Validate release metadata in PR and post-merge workflows |
 | `prepare-release` | Build distributions and upload release artifacts |
 | `github-release` | Download artifacts and create a tagged GitHub release |
 | `docs` | Build MkDocs or deploy a version with Mike |
@@ -81,6 +83,23 @@ publish:
 
 Configure the matching GitHub owner, repository, workflow filename, and `pypi`
 environment as a Trusted Publisher on PyPI.
+
+## Release by pull request
+
+`release-pr` turns an explicit `patch`, `minor`, or `major` choice into a
+`release/vX.Y.Z` pull request. It updates `bump-my-version` files, rolls the
+manual `Unreleased` changelog section into the release, and adds a fresh
+`Unreleased` section. It never tags or publishes.
+
+`release-check` validates that version-changing pull requests use the expected
+release branch, contain matching changelog headings, and modify only files
+listed by the version configuration. After merge, it exposes the version and
+tag to the caller-owned trusted-publishing workflow. This flow reads repository
+state rather than commit messages, so merge, squash, and rebase strategies are
+all supported.
+
+Use a GitHub App installation token for `release-pr` when automated pull
+requests should run required checks without manual workflow approval.
 
 ## Versions
 

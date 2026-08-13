@@ -20,6 +20,9 @@ inputs:
   alias:
     description: Mike alias updated by tag deployments
     default: latest
+  version:
+    description: Explicit documentation version for a release merged to main
+    default: ""
   pre-build-tasks:
     description: Space-separated Invoke tasks run before MkDocs or Mike
     default: ""
@@ -75,8 +78,15 @@ runs:
       env:
         ALIAS: ${{ inputs.alias }}
         CONFIG_FILE: ${{ inputs.config-file }}
+        VERSION: ${{ inputs.version }}
       run: |
-        if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+        if [[ -n "$VERSION" ]]; then
+          if [[ "$GITHUB_REF_TYPE" != "tag" && "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "::error::Versioned deployment is restricted to main and tags"
+            exit 1
+          fi
+          mike deploy --config-file "$CONFIG_FILE" --push --update-aliases "$VERSION" "$ALIAS"
+        elif [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
           version="${GITHUB_REF_NAME#v}"
           mike deploy --config-file "$CONFIG_FILE" --push --update-aliases "$version" "$ALIAS"
         elif [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
@@ -86,4 +96,3 @@ runs:
           exit 1
         fi
         mike set-default --config-file "$CONFIG_FILE" --push "$ALIAS"
-
