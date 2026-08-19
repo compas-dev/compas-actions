@@ -101,17 +101,31 @@ jobs:
           MAJOR: ${{ steps.version.outputs.major }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          gh auth setup-git
+          # Refs are created through the API rather than pushed, so the job needs no git
+          # credentials and no tagger identity: contents: write on the token is the whole
+          # authorization story, and the API stamps the tagger from the token itself.
+          tag_sha=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags" \
+            -f tag="$VERSION" \
+            -f message="compas-actions $VERSION" \
+            -f object="$GITHUB_SHA" \
+            -f type=commit \
+            --jq .sha)
 
-          git tag -a "$VERSION" -m "compas-actions $VERSION"
-          git push origin "$VERSION"
+          gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref="refs/tags/${VERSION}" \
+            -f sha="$tag_sha" >/dev/null
 
-          # Consumers pin the movable major tag, so it follows every release in that
-          # series. A major release creates a new one and leaves the previous in place.
-          git tag -f -a "$MAJOR" -m "compas-actions $MAJOR"
-          git push --force origin "$MAJOR"
+          # Consumers pin the movable major tag, so it follows every release in the series.
+          # A major release creates a new one and leaves the previous where it is.
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${MAJOR}" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${MAJOR}" \
+              -f sha="$GITHUB_SHA" \
+              -F force=true >/dev/null
+          else
+            gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${MAJOR}" \
+              -f sha="$GITHUB_SHA" >/dev/null
+          fi
 
       - name: Publish the release
         env:
