@@ -23,6 +23,7 @@ Every public automation is a composite action in a named directory:
 ```text
 compas-actions/ci@v1
 compas-actions/prepare-release@v1
+compas-actions/release-assets@v1
 compas-actions/github-release@v1
 compas-actions/docs@v1
 compas-actions/pr-checks@v1
