@@ -82,6 +82,15 @@ Use it instead of `prepare-release`'s `release-assets` input when the build is
 slow or needs tools the wheel build does not, since that input ties asset
 generation to `invoke pre-build` on every matrix job.
 
+When a release collects assets from more than one job, have each upload under
+its own name and let `github-release` gather them:
+
+```yaml
+- uses: compas-dev/compas-actions/github-release@v1
+  with:
+    release-assets-artifact-pattern: github-release-assets-*
+```
+
 The trusted publisher remains explicit in the caller:
 
 ```yaml
