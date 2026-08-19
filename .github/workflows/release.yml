@@ -47,40 +47,21 @@ jobs:
         run: |
           latest=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n 1)
 
-          if [[ -n "$latest" ]]; then
-            IFS=. read -r major minor patch <<< "${latest#v}"
-            echo "Latest release is $latest"
-          else
-            # No point release has ever been tagged, only the movable major tag. Seed from
-            # that, so the series consumers already pin to carries on rather than restarting
-            # at v0 and stranding every `@v1` caller on a tag that stops moving.
-            series=$(git tag --list 'v[0-9]*' | grep -E '^v[0-9]+$' | sort -V | tail -n 1)
-            major=${series#v}
-            major=${major:-0}
-            minor=0
-            patch=0
-            echo "No point releases yet, continuing the ${series:-v0} series"
+          # With no point release tagged yet, carry on from the movable major tag, so the
+          # series consumers already pin to continues instead of restarting at v0 and
+          # stranding them on a tag that stops moving.
+          if [[ -z "$latest" ]]; then
+            series=$(git tag --list 'v[0-9]*' | grep -Ex 'v[0-9]+' | sort -V | tail -n 1)
+            latest="${series:-v0}.0.0"
           fi
 
+          IFS=. read -r major minor patch <<< "${latest#v}"
           case "$RELEASE_TYPE" in
-            major)
-              major=$((major + 1))
-              minor=0
-              patch=0
-              ;;
-            minor)
-              minor=$((minor + 1))
-              patch=0
-              ;;
-            patch)
-              patch=$((patch + 1))
-              ;;
-            *)
-              echo "::error::Unknown release type: $RELEASE_TYPE"
-              exit 1
-              ;;
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+            *) echo "::error::Unknown release type: $RELEASE_TYPE"; exit 1 ;;
           esac
-
           version="v${major}.${minor}.${patch}"
 
           if git rev-parse -q --verify "refs/tags/${version}" >/dev/null; then
@@ -93,7 +74,7 @@ jobs:
             echo "major=v${major}"
           } >> "$GITHUB_OUTPUT"
 
-          echo "Releasing ${version}"
+          echo "Releasing ${version}, up from ${latest}"
 
       - name: Tag the release
         env:
