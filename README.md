@@ -15,6 +15,7 @@ is a clean break rather than a compatibility bundle.
 | `release-pr` | Bump the version and open a human-reviewed release PR |
 | `release-check` | Validate release metadata in PR and post-merge workflows |
 | `prepare-release` | Build distributions and upload release artifacts |
+| `release-assets` | Run an Invoke task and upload what it produces as release assets |
 | `github-release` | Download artifacts and create a tagged GitHub release |
 | `docs` | Build MkDocs or deploy a version with Mike |
 | `pr-checks` | Require a changelog update or an explicit skip label |
@@ -60,6 +61,26 @@ uses four separate jobs:
 3. A caller-owned PyPA job publishes with `contents: read` and
    `id-token: write`.
 4. `github-release` creates the release with `contents: write`.
+
+A package that ships more than its distributions -- generated protobuf
+bindings, schema bundles, compiled assets -- adds a `release-assets` job
+alongside `prepare-release`. Both upload to the same artifact name, so
+`github-release` attaches whatever is there:
+
+```yaml
+assets:
+  needs: release
+  runs-on: ubuntu-latest
+  steps:
+    - uses: compas-dev/compas-actions/release-assets@v1
+      with:
+        invoke-tasks: create-class-assets
+        paths: dist/proto/*.zip
+```
+
+Use it instead of `prepare-release`'s `release-assets` input when the build is
+slow or needs tools the wheel build does not, since that input ties asset
+generation to `invoke pre-build` on every matrix job.
 
 The trusted publisher remains explicit in the caller:
 

@@ -1,0 +1,130 @@
+name: Build release assets
+description: Run an Invoke task and upload what it produces as release assets
+
+inputs:
+  python-version:
+    description: Python version used to build the assets
+    default: "3.12"
+  management-tool:
+    description: Dependency manager used for the build (uv or conda)
+    default: uv
+  extras:
+    description: Extras needed by the build tasks
+    default: dev
+  conda-environment:
+    description: Name of the Conda environment
+    default: compas
+  environment-file:
+    description: Explicit Conda environment file; OS-specific files are detected when omitted
+    default: ""
+  invoke-tasks:
+    description: Space-separated Invoke tasks that produce the assets
+    default: create-class-assets
+  paths:
+    description: Multiline paths/globs to upload
+    default: dist/proto/*.zip
+  artifact-name:
+    description: Workflow artifact the assets are uploaded as
+    default: github-release-assets
+  if-no-files-found:
+    description: Behaviour when no file matches paths (error, warn or ignore)
+    default: error
+  submodules:
+    description: Checkout submodules (false, true, or recursive)
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v7.0.1
+      with:
+        submodules: ${{ inputs.submodules }}
+        persist-credentials: false
+
+    - uses: actions/setup-python@v7.0.0
+      if: inputs.management-tool == 'uv'
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - uses: astral-sh/setup-uv@v10.0.0
+      if: inputs.management-tool == 'uv'
+
+    - name: Validate management tool
+      shell: bash
+      env:
+        MANAGEMENT_TOOL: ${{ inputs.management-tool }}
+      run: |
+        case "$MANAGEMENT_TOOL" in
+          uv|conda) ;;
+          *) echo "::error::management-tool must be uv or conda"; exit 1 ;;
+        esac
+
+    - name: Set up Conda
+      if: inputs.management-tool == 'conda'
+      uses: conda-incubator/setup-miniconda@v4.0.1
+      with:
+        miniconda-version: latest
+        channels: conda-forge
+        activate-environment: ${{ inputs.conda-environment }}
+        python-version: ${{ inputs.python-version }}
+
+    - name: Select Conda environment file
+      if: inputs.management-tool == 'conda'
+      id: conda-file
+      shell: bash -el {0}
+      env:
+        EXPLICIT_FILE: ${{ inputs.environment-file }}
+      run: |
+        if [[ -n "$EXPLICIT_FILE" ]]; then
+          candidate="$EXPLICIT_FILE"
+        elif [[ "$RUNNER_OS" == "Windows" && -f env_win.yml ]]; then
+          candidate=env_win.yml
+        elif [[ "$RUNNER_OS" == "macOS" && -f env_osx.yml ]]; then
+          candidate=env_osx.yml
+        elif [[ "$RUNNER_OS" == "Linux" && -f env_linux.yml ]]; then
+          candidate=env_linux.yml
+        else
+          candidate=environment.yml
+        fi
+
+        if [[ ! -f "$candidate" ]]; then
+          echo "::error::Conda environment file not found: $candidate"
+          exit 1
+        fi
+        echo "path=$candidate" >> "$GITHUB_OUTPUT"
+
+    - name: Install Conda environment
+      if: inputs.management-tool == 'conda'
+      shell: bash -el {0}
+      env:
+        CONDA_ENVIRONMENT: ${{ inputs.conda-environment }}
+        ENVIRONMENT_FILE: ${{ steps.conda-file.outputs.path }}
+      run: conda env update -f "$ENVIRONMENT_FILE" -n "$CONDA_ENVIRONMENT"
+
+    - name: Install project
+      if: inputs.management-tool == 'uv'
+      shell: bash
+      env:
+        EXTRAS: ${{ inputs.extras }}
+      run: |
+        requirement="."
+        [[ -n "$EXTRAS" ]] && requirement=".[$EXTRAS]"
+        uv pip install --system -e "$requirement"
+
+    - name: Build assets
+      shell: bash -el {0}
+      env:
+        INVOKE_TASKS: ${{ inputs.invoke-tasks }}
+      run: |
+        if [[ -z "$INVOKE_TASKS" ]]; then
+          echo "::error::invoke-tasks must name at least one task"
+          exit 1
+        fi
+        invoke $INVOKE_TASKS
+
+    - name: Upload release assets
+      uses: actions/upload-artifact@v7.0.1
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.paths }}
+        if-no-files-found: ${{ inputs.if-no-files-found }}
