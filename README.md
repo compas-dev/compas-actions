@@ -128,6 +128,17 @@ can instead pass a GitHub App installation token.
 `@main` is useful while bootstrapping this repository. Consumers should move to
 the readable `@v1` release tag after the first release.
 
+## Releasing
+
+Run the `release` workflow from the Actions tab and pick `patch`, `minor` or
+`major`. It works out the next version from the existing tags, creates the
+annotated point tag, moves the major tag consumers pin to, and publishes a
+GitHub release with generated notes.
+
+Releases run from the default branch only. A major release creates a new major
+tag and leaves the previous one where it is, so callers on the old one keep
+working until they choose to move.
+
 ## Deliberate exclusions
 
 - IronPython and Rhino 7 component generation

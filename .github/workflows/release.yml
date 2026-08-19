@@ -1,0 +1,115 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release-type:
+        description: Part of the version to bump
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: minor
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Tag and publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check the release branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if [[ "$GITHUB_REF_NAME" != "$DEFAULT_BRANCH" ]]; then
+            echo "::error::Release from $DEFAULT_BRANCH, not $GITHUB_REF_NAME"
+            exit 1
+          fi
+
+      - name: Work out the next version
+        id: version
+        env:
+          RELEASE_TYPE: ${{ inputs.release-type }}
+        run: |
+          latest=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n 1)
+
+          # With no point release tagged yet, carry on from the movable major tag, so the
+          # series consumers already pin to continues instead of restarting at v0 and
+          # stranding them on a tag that stops moving.
+          if [[ -z "$latest" ]]; then
+            series=$(git tag --list 'v[0-9]*' | grep -Ex 'v[0-9]+' | sort -V | tail -n 1)
+            latest="${series:-v0}.0.0"
+          fi
+
+          IFS=. read -r major minor patch <<< "${latest#v}"
+          case "$RELEASE_TYPE" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+            *) echo "::error::Unknown release type: $RELEASE_TYPE"; exit 1 ;;
+          esac
+          version="v${major}.${minor}.${patch}"
+
+          if git rev-parse -q --verify "refs/tags/${version}" >/dev/null; then
+            echo "::error::${version} already exists"
+            exit 1
+          fi
+
+          {
+            echo "version=${version}"
+            echo "major=v${major}"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Releasing ${version}, up from ${latest}"
+
+      - name: Tag the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAJOR: ${{ steps.version.outputs.major }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # Refs are created through the API rather than pushed, so the job needs no git
+          # credentials and no tagger identity: contents: write on the token is the whole
+          # authorization story, and the API stamps the tagger from the token itself.
+          tag_sha=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags" \
+            -f tag="$VERSION" \
+            -f message="compas-actions $VERSION" \
+            -f object="$GITHUB_SHA" \
+            -f type=commit \
+            --jq .sha)
+
+          gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref="refs/tags/${VERSION}" \
+            -f sha="$tag_sha" >/dev/null
+
+          # Consumers pin the movable major tag, so it follows every release in the series.
+          # A major release creates a new one and leaves the previous where it is.
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${MAJOR}" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${MAJOR}" \
+              -f sha="$GITHUB_SHA" \
+              -F force=true >/dev/null
+          else
+            gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${MAJOR}" \
+              -f sha="$GITHUB_SHA" >/dev/null
+          fi
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: gh release create "$VERSION" --title "$VERSION" --generate-notes
