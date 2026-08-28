@@ -26,6 +26,11 @@ inputs:
   release-assets-artifact-name:
     description: Workflow artifact containing additional release assets; leave empty for none
     default: ""
+  release-assets-artifact-pattern:
+    description: >-
+      Glob matching several artifacts of release assets, for a release whose assets are
+      produced by more than one job. Takes precedence over release-assets-artifact-name.
+    default: ""
   generate-release-notes:
     description: Ask GitHub to generate release notes instead of reading the changelog
     default: "false"
@@ -67,10 +72,18 @@ runs:
         path: release-assets
 
     - name: Download additional release assets
-      if: inputs.release-assets-artifact-name != ''
+      if: inputs.release-assets-artifact-name != '' && inputs.release-assets-artifact-pattern == ''
       uses: actions/download-artifact@v8.0.1
       with:
         name: ${{ inputs.release-assets-artifact-name }}
+        path: release-assets
+
+    - name: Download additional release assets from several artifacts
+      if: inputs.release-assets-artifact-pattern != ''
+      uses: actions/download-artifact@v8.0.1
+      with:
+        pattern: ${{ inputs.release-assets-artifact-pattern }}
+        merge-multiple: true
         path: release-assets
 
     - name: Read changelog entry
