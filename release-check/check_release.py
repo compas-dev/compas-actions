@@ -4,7 +4,7 @@ import argparse
 import re
 import subprocess
 import tomllib
-from pathlib import Path
+from pathlib import Path, PurePath
 
 
 SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
@@ -29,11 +29,17 @@ def version(config: dict) -> str:
         raise SystemExit("Missing tool.bumpversion.current_version") from error
 
 
-def configured_files(config: dict, config_path: str) -> set[str]:
-    files = {config_path}
+def configured_files(config: dict, config_path: str) -> tuple[set[str], list[str]]:
+    names = {config_path}
+    globs = []
     for item in config["tool"]["bumpversion"].get("files", []):
-        files.add(str(item["filename"]))
-    return files
+        if "filename" in item:
+            names.add(str(item["filename"]))
+        elif "glob" in item:
+            globs.append(str(item["glob"]))
+        else:
+            raise SystemExit("Every tool.bumpversion.files entry needs a filename or a glob")
+    return names, globs
 
 
 def write_output(path: Path, name: str, value: str) -> None:
@@ -89,9 +95,13 @@ def main() -> None:
     if len(release_heading.findall(changelog)) != 1:
         raise SystemExit(f"The changelog must contain exactly one release heading for {new_version}")
 
-    allowed = configured_files(head_config, args.config)
+    names, globs = configured_files(head_config, args.config)
     changed = set(git("diff", "--name-only", args.base, args.head).splitlines())
-    unexpected = sorted(changed - allowed)
+    unexpected = sorted(
+        path
+        for path in changed
+        if path not in names and not any(PurePath(path).full_match(glob) for glob in globs)
+    )
     if unexpected:
         raise SystemExit("Release changes files outside the version configuration: " + ", ".join(unexpected))
 

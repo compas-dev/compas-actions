@@ -122,9 +122,10 @@ manual `Unreleased` changelog section into the release, and adds a fresh
 `Unreleased` section. It never tags or publishes.
 
 `release-check` validates that version-changing pull requests use the expected
-release branch, contain matching changelog headings, and modify only files
-listed by the version configuration. After merge, it exposes the version and
-tag to the caller-owned trusted-publishing workflow. This flow reads repository
+release branch, contain matching changelog headings, and modify only files the
+version configuration owns, named either by `filename` or by `glob`. After
+merge, it exposes the version and tag to the caller-owned trusted-publishing
+workflow. This flow reads repository
 state rather than commit messages, so merge, squash, and rebase strategies are
 all supported.
 

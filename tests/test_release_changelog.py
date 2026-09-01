@@ -77,6 +77,58 @@ class ReleaseChangelogTests(unittest.TestCase):
                     ["is-release=true", "version=1.2.3", "tag=v1.2.3"],
                 )
 
+    def test_release_check_accepts_files_matched_by_a_glob(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            self._git(repository, "init")
+            self._git(repository, "config", "user.name", "Tests")
+            self._git(repository, "config", "user.email", "tests@example.com")
+            self._write_project(repository, "1.2.2")
+            (repository / "CHANGELOG.md").write_text("# Changelog\n\n## Unreleased\n", encoding="utf-8")
+            component = repository / "src" / "components" / "Widget" / "code.py"
+            component.parent.mkdir(parents=True)
+            component.write_text("# r: package>=1.2.2\n", encoding="utf-8")
+            self._git(repository, "add", ".")
+            self._git(repository, "commit", "-m", "Base")
+            base = self._git(repository, "rev-parse", "HEAD").stdout.strip()
+
+            self._write_project(repository, "1.2.3")
+            (repository / "CHANGELOG.md").write_text(
+                "# Changelog\n\n## Unreleased\n\n## [1.2.3] 2026-08-28\n",
+                encoding="utf-8",
+            )
+            component.write_text("# r: package>=1.2.3\n", encoding="utf-8")
+            self._git(repository, "add", ".")
+            self._git(repository, "commit", "-m", "Release")
+            head = self._git(repository, "rev-parse", "HEAD").stdout.strip()
+            output = repository / "output"
+
+            subprocess.run(
+                (
+                    sys.executable,
+                    ROOT / "release-check" / "check_release.py",
+                    "--base",
+                    base,
+                    "--head",
+                    head,
+                    "--config",
+                    "pyproject.toml",
+                    "--changelog",
+                    "CHANGELOG.md",
+                    "--pull-request-branch",
+                    "release/v1.2.3",
+                    "--output",
+                    output,
+                ),
+                cwd=repository,
+                check=True,
+            )
+
+            self.assertEqual(
+                output.read_text(encoding="utf-8").splitlines(),
+                ["is-release=true", "version=1.2.3", "tag=v1.2.3"],
+            )
+
     @staticmethod
     def _git(repository: Path, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -97,6 +149,9 @@ class ReleaseChangelogTests(unittest.TestCase):
                     "",
                     "[[tool.bumpversion.files]]",
                     'filename = "CHANGELOG.md"',
+                    "",
+                    "[[tool.bumpversion.files]]",
+                    'glob = "src/components/**/code.py"',
                     "",
                 )
             ),
