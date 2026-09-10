@@ -25,7 +25,7 @@ jobs:
         with:
           args: -color
       - name: Audit workflow security
-        uses: zizmorcore/zizmor-action@v0.6.2
+        uses: zizmorcore/zizmor-action@v0.6.3
         with:
           advanced-security: false
           persona: regular
