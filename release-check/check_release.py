@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import re
 import subprocess
 import tomllib
-from pathlib import Path, PurePath
+from pathlib import Path
 
 
 SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
@@ -100,7 +101,7 @@ def main() -> None:
     unexpected = sorted(
         path
         for path in changed
-        if path not in names and not any(PurePath(path).full_match(glob) for glob in globs)
+        if path not in names and not any(fnmatch.fnmatchcase(path, glob) for glob in globs)
     )
     if unexpected:
         raise SystemExit("Release changes files outside the version configuration: " + ", ".join(unexpected))

@@ -1,15 +1,21 @@
 name: Build or deploy documentation
-description: Build a MkDocs site or deploy its version with Mike
+description: Synchronize a locked project, build MkDocs strictly, or deploy with Mike
 
 inputs:
   python-version:
     description: Python version used to build documentation
     default: "3.12"
-  extras:
-    description: Editable-install extras containing MkDocs and Mike
+  dependency-groups:
+    description: Comma-separated dependency groups containing MkDocs and Mike
     default: docs
+  extras:
+    description: Comma-separated project extras required by documentation
+    default: ""
+  project-directory:
+    description: Directory containing pyproject.toml and uv.lock
+    default: .
   config-file:
-    description: MkDocs configuration file
+    description: MkDocs configuration file, relative to project-directory unless absolute
     default: mkdocs.yml
   strict:
     description: Fail the MkDocs build on warnings
@@ -17,6 +23,9 @@ inputs:
   deploy:
     description: Deploy with Mike instead of only building
     default: "false"
+  github-token:
+    description: Token with contents write permission, required only for deployment
+    default: ""
   alias:
     description: Mike alias updated by tag deployments
     default: latest
@@ -24,72 +33,101 @@ inputs:
     description: Explicit documentation version for a release merged to main
     default: ""
   pre-build-tasks:
-    description: Space-separated Invoke tasks run before MkDocs or Mike
+    description: Optional space-separated Invoke tasks run before MkDocs
     default: ""
 
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@v7.0.1
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         fetch-depth: ${{ inputs.deploy == 'true' && '0' || '1' }}
-        persist-credentials: ${{ inputs.deploy == 'true' }}
-
-    - uses: actions/setup-python@v7.0.0
+        persist-credentials: false
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
         python-version: ${{ inputs.python-version }}
-
-    - uses: astral-sh/setup-uv@v10.0.0
-
-    - name: Install project
+    - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+    - name: Synchronize documentation environment
       shell: bash
       env:
+        DEPENDENCY_GROUPS: ${{ inputs.dependency-groups }}
         EXTRAS: ${{ inputs.extras }}
-      run: uv pip install --system -e ".[$EXTRAS]"
-
+        PROJECT_DIRECTORY: ${{ inputs.project-directory }}
+      run: |
+        if [[ ! -f "$PROJECT_DIRECTORY/uv.lock" ]]; then
+          echo "::error::uv.lock not found in $PROJECT_DIRECTORY"
+          exit 1
+        fi
+        args=(sync --frozen --project "$PROJECT_DIRECTORY")
+        IFS=',' read -r -a groups <<< "$DEPENDENCY_GROUPS"
+        for group in "${groups[@]}"; do
+          group="${group#${group%%[![:space:]]*}}"
+          group="${group%${group##*[![:space:]]}}"
+          [[ -n "$group" ]] && args+=(--group "$group")
+        done
+        IFS=',' read -r -a extras <<< "$EXTRAS"
+        for extra in "${extras[@]}"; do
+          extra="${extra#${extra%%[![:space:]]*}}"
+          extra="${extra%${extra##*[![:space:]]}}"
+          [[ -n "$extra" ]] && args+=(--extra "$extra")
+        done
+        uv "${args[@]}"
     - name: Prepare documentation sources
       if: inputs.pre-build-tasks != ''
       shell: bash
       env:
         INVOKE_TASKS: ${{ inputs.pre-build-tasks }}
-      run: invoke $INVOKE_TASKS
-
+        PROJECT_DIRECTORY: ${{ inputs.project-directory }}
+      run: uv run --project "$PROJECT_DIRECTORY" invoke $INVOKE_TASKS
     - name: Build documentation
       if: inputs.deploy != 'true'
       shell: bash
       env:
         CONFIG_FILE: ${{ inputs.config-file }}
+        PROJECT_DIRECTORY: ${{ inputs.project-directory }}
         STRICT_FLAG: ${{ inputs.strict == 'true' && '--strict' || '' }}
-      run: mkdocs build --config-file "$CONFIG_FILE" $STRICT_FLAG
-
+      run: |
+        config_path="$CONFIG_FILE"
+        [[ "$config_path" = /* ]] || config_path="$PROJECT_DIRECTORY/$config_path"
+        uv run --project "$PROJECT_DIRECTORY" mkdocs build --config-file "$config_path" $STRICT_FLAG
     - name: Configure Git
       if: inputs.deploy == 'true'
       shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
       run: |
+        if [[ -z "$GH_TOKEN" ]]; then
+          echo "::error::github-token is required when deploy is true"
+          exit 1
+        fi
         git config user.name github-actions[bot]
         git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-
+        git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
     - name: Deploy with Mike
       if: inputs.deploy == 'true'
       shell: bash
       env:
         ALIAS: ${{ inputs.alias }}
         CONFIG_FILE: ${{ inputs.config-file }}
+        PROJECT_DIRECTORY: ${{ inputs.project-directory }}
         VERSION: ${{ inputs.version }}
       run: |
+        config_path="$CONFIG_FILE"
+        [[ "$config_path" = /* ]] || config_path="$PROJECT_DIRECTORY/$config_path"
+        mike=(uv run --project "$PROJECT_DIRECTORY" mike --config-file "$config_path")
         if [[ -n "$VERSION" ]]; then
           if [[ "$GITHUB_REF_TYPE" != "tag" && "$GITHUB_REF" != "refs/heads/main" ]]; then
             echo "::error::Versioned deployment is restricted to main and tags"
             exit 1
           fi
-          mike deploy --config-file "$CONFIG_FILE" --push --update-aliases "$VERSION" "$ALIAS"
+          "${mike[@]}" deploy --push --update-aliases "$VERSION" "$ALIAS"
         elif [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
           version="${GITHUB_REF_NAME#v}"
-          mike deploy --config-file "$CONFIG_FILE" --push --update-aliases "$version" "$ALIAS"
+          "${mike[@]}" deploy --push --update-aliases "$version" "$ALIAS"
         elif [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
-          mike deploy --config-file "$CONFIG_FILE" --push "$ALIAS"
+          "${mike[@]}" deploy --push "$ALIAS"
         else
           echo "::error::Deployment is restricted to main and tags"
           exit 1
         fi
-        mike set-default --config-file "$CONFIG_FILE" --push "$ALIAS"
+        "${mike[@]}" set-default --push "$ALIAS"

@@ -6,7 +6,7 @@ The previous repositories mix orchestration, tooling, and permissions:
 
 | Repository | Responsibilities found | New home |
 | --- | --- | --- |
-| `compas-actions.build` | checkout, environment setup, pre-build, lint, test, import checks, Grasshopper | `ci`, `setup-python`, `ghpython-components` |
+| `compas-actions.build` | checkout, environment setup, pre-build, lint, test, import checks, Grasshopper | `ci` or `setup-python` plus visible caller commands, `ghpython-components` |
 | `compas-actions.publish` | changelog, release, Grasshopper, package build, token upload | `prepare-release`, caller-owned OIDC publish, `github-release` |
 | `compas-actions.docs` | environment setup, Sphinx/MkDocs build and deployment | `docs` |
 | `compas-actions.docversions` | mutate a Sphinx-style `gh-pages` tree | intentionally retired |
@@ -16,19 +16,25 @@ Representative consumers include pure-Python matrices, OS-specific Conda
 environments, `cibuildwheel` packages, generated protobuf archives, and Windows
 Grasshopper builds.
 
+`ci` and `setup-python` retain bounded Conda environment-file provisioning as a
+compatibility and convenience path. This does not move native policy into the
+actions: new hybrid/native workflows keep their environment files, matrices,
+system packages, compilers, and build commands visible in caller YAML.
+
 ## Public interface
 
 Every public automation is a composite action in a named directory:
 
 ```text
-compas-actions/ci@v1
-compas-actions/prepare-release@v1
-compas-actions/release-assets@v1
-compas-actions/github-release@v1
-compas-actions/docs@v1
-compas-actions/pr-checks@v1
-compas-actions/release-pr@v1
-compas-actions/release-check@v1
+compas-actions/setup-python@<immutable-v2-commit>
+compas-actions/ci@<immutable-v2-commit>
+compas-actions/prepare-release@<immutable-v2-commit>
+compas-actions/release-assets@<immutable-v2-commit>
+compas-actions/github-release@<immutable-v2-commit>
+compas-actions/docs@<immutable-v2-commit>
+compas-actions/pr-checks@<immutable-v2-commit>
+compas-actions/release-pr@<immutable-v2-commit>
+compas-actions/release-check@<immutable-v2-commit>
 ```
 
 Callers define job structure. In particular, callers own `runs-on`, matrix
@@ -62,11 +68,12 @@ policy and must remain caller-owned.
 ## Versioning
 
 All actions share one repository version. Breaking changes require a new major
-version. A movable major tag (`v1`) is the shared, readable consumer interface.
+version. Consumers pin a reviewed immutable commit and add a readable version
+comment. Release tags aid discovery but are not the execution trust boundary.
 
 ## Modern-only boundary
 
-The first major version targets supported GitHub-hosted runners, current action
-runtimes, uv, optional Conda for native packages, PyPI Trusted Publishing,
+The second major version targets supported GitHub-hosted runners, current action
+runtimes, locked uv projects, optional bounded Conda setup, caller-owned native provisioning, PyPI Trusted Publishing,
 MkDocs/Mike, and Rhino 8 CPython. It contains no compatibility wrapper,
 IronPython implementation, Sphinx implementation, or API-token publisher.

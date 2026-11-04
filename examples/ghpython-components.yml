@@ -10,18 +10,19 @@ jobs:
   components:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: compas-dev/compas-actions/setup-python@v1
+      - uses: compas-dev/compas-actions/setup-python@0000000000000000000000000000000000000000
         with:
           python-version: "3.12"
-          extras: dev
-      - uses: compas-dev/compas-actions/ghpython-components@v1
+          dependency-groups: dev
+          extras: ""
+      - uses: compas-dev/compas-actions/ghpython-components@0000000000000000000000000000000000000000
         with:
           source: src/compas_ghpython/components
           target: dist/ghuser
-      - uses: actions/upload-artifact@v7.0.1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: grasshopper-components
           path: dist/ghuser

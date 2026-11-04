@@ -15,8 +15,8 @@ inputs:
     description: Optional package version substituted into component templates
     default: ""
   componentizer-ref:
-    description: ghpython_componentizer Git tag or branch to install
-    default: v0.1.0
+    description: Immutable ghpython_componentizer Git commit to install
+    default: 1212887a6033a5795e74ba8919cd31b37f08ca5c
 
 runs:
   using: composite
@@ -34,8 +34,8 @@ runs:
       env:
         COMPONENTIZER_REF: ${{ inputs.componentizer-ref }}
       run: |
-        if ($env:COMPONENTIZER_REF -notmatch '^[A-Za-z0-9._/-]+$') {
-          Write-Error "componentizer-ref contains unsupported characters."
+        if ($env:COMPONENTIZER_REF -notmatch '^[0-9a-f]{40}$') {
+          Write-Error "componentizer-ref must be a full Git commit SHA."
           exit 1
         }
         $requirement = "ghpython_componentizer @ git+https://github.com/compas-dev/ghpython_componentizer.git@$env:COMPONENTIZER_REF"

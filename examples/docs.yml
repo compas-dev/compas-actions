@@ -1,30 +1,13 @@
 name: docs
-
-on:
-  pull_request:
-  push:
-    branches: [main]
-    tags: ["v*"]
-
+on: [pull_request]
 permissions:
   contents: read
-
 jobs:
   build:
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: compas-dev/compas-actions/docs@v1
+      # Replace the zero SHA with the reviewed compas-actions v2 commit.
+      - uses: compas-dev/compas-actions/docs@0000000000000000000000000000000000000000
         with:
-          extras: docs
-
-  deploy:
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: compas-dev/compas-actions/docs@v1
-        with:
-          deploy: true
-          extras: docs
+          dependency-groups: docs
+          strict: true

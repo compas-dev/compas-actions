@@ -1,166 +1,128 @@
 name: Prepare Python release
-description: Build and upload Python distributions plus optional release assets
+description: Build, verify, and upload one immutable Python distribution set
 
 inputs:
   python-version:
     description: Python version used to build distributions
     default: "3.12"
-  management-tool:
-    description: Dependency manager used for pre-build tasks (uv or conda)
-    default: uv
-  extras:
-    description: Extras needed by pre-build tasks
-    default: dev
-  conda-environment:
-    description: Name of the Conda environment
-    default: compas
-  environment-file:
-    description: Explicit Conda environment file; OS-specific files are detected when omitted
+  dependency-groups:
+    description: Comma-separated uv groups needed by an optional pre-build
     default: ""
+  extras:
+    description: Comma-separated uv extras needed by an optional pre-build
+    default: dev
+  project-directory:
+    description: Project directory
+    default: .
+  frozen:
+    description: Require the committed uv lock for an optional pre-build
+    default: "true"
   run-prebuild:
-    description: Run invoke pre-build before packaging
+    description: Run optional Invoke pre-build tasks before packaging
     default: "false"
+  invoke-tasks:
+    description: Space-separated Invoke pre-build tasks
+    default: pre-build
   sdist:
     description: Build a source distribution
     default: "true"
   wheel:
     description: Build a wheel
     default: "true"
-  release-assets:
-    description: Optional multiline paths/globs for non-PyPI release assets
+  import-modules:
+    description: Comma-separated modules imported from the installed wheel
     default: ""
   distribution-artifact-name:
-    description: Workflow artifact containing Python distributions
+    description: Workflow artifact containing verified Python distributions
     default: python-package-distributions
-  release-assets-artifact-name:
-    description: Workflow artifact containing additional release assets
-    default: github-release-assets
 
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@v7.0.1
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         fetch-depth: 0
         persist-credentials: false
-
-    - uses: actions/setup-python@v7.0.0
-      if: inputs.management-tool == 'uv'
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
         python-version: ${{ inputs.python-version }}
-
-    - uses: astral-sh/setup-uv@v10.0.0
-      if: inputs.management-tool == 'uv'
-
-    - name: Validate management tool
+    - name: Validate optional pre-build inputs
       shell: bash
       env:
-        MANAGEMENT_TOOL: ${{ inputs.management-tool }}
+        FROZEN: ${{ inputs.frozen }}
+        RUN_PREBUILD: ${{ inputs.run-prebuild }}
       run: |
-        case "$MANAGEMENT_TOOL" in
-          uv|conda) ;;
-          *) echo "::error::management-tool must be uv or conda"; exit 1 ;;
-        esac
-
-    - name: Set up Conda
-      if: inputs.management-tool == 'conda'
-      uses: conda-incubator/setup-miniconda@v4.0.1
-      with:
-        miniconda-version: latest
-        channels: conda-forge
-        activate-environment: ${{ inputs.conda-environment }}
-        python-version: ${{ inputs.python-version }}
-
-    - name: Select Conda environment file
-      if: inputs.management-tool == 'conda'
-      id: conda-file
-      shell: bash -el {0}
-      env:
-        EXPLICIT_FILE: ${{ inputs.environment-file }}
-      run: |
-        if [[ -n "$EXPLICIT_FILE" ]]; then
-          candidate="$EXPLICIT_FILE"
-        elif [[ "$RUNNER_OS" == "Windows" && -f env_win.yml ]]; then
-          candidate=env_win.yml
-        elif [[ "$RUNNER_OS" == "macOS" && -f env_osx.yml ]]; then
-          candidate=env_osx.yml
-        elif [[ "$RUNNER_OS" == "Linux" && -f env_linux.yml ]]; then
-          candidate=env_linux.yml
-        else
-          candidate=environment.yml
-        fi
-
-        if [[ ! -f "$candidate" ]]; then
-          echo "::error::Conda environment file not found: $candidate"
-          exit 1
-        fi
-        echo "path=$candidate" >> "$GITHUB_OUTPUT"
-
-    - name: Install Conda environment
-      if: inputs.management-tool == 'conda'
-      shell: bash -el {0}
-      env:
-        CONDA_ENVIRONMENT: ${{ inputs.conda-environment }}
-        ENVIRONMENT_FILE: ${{ steps.conda-file.outputs.path }}
-      run: conda env update -f "$ENVIRONMENT_FILE" -n "$CONDA_ENVIRONMENT"
-
-    - name: Install project for pre-build
-      if: inputs.run-prebuild == 'true' && inputs.management-tool == 'uv'
-      shell: bash
-      env:
-        EXTRAS: ${{ inputs.extras }}
-      run: |
-        requirement="."
-        [[ -n "$EXTRAS" ]] && requirement=".[$EXTRAS]"
-        uv pip install --system -e "$requirement"
-
-    - name: Run pre-build
+        case "$FROZEN" in true|false) ;; *) echo "::error::frozen must be true or false"; exit 1 ;; esac
+        case "$RUN_PREBUILD" in true|false) ;; *) echo "::error::run-prebuild must be true or false"; exit 1 ;; esac
+    - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
       if: inputs.run-prebuild == 'true'
-      shell: bash -el {0}
-      run: invoke pre-build
-
+    - name: Synchronize optional pre-build environment
+      if: inputs.run-prebuild == 'true'
+      shell: bash
+      env:
+        DEPENDENCY_GROUPS: ${{ inputs.dependency-groups }}
+        EXTRAS: ${{ inputs.extras }}
+        FROZEN: ${{ inputs.frozen }}
+        PROJECT_DIRECTORY: ${{ inputs.project-directory }}
+      run: |
+        args=(sync --project "$PROJECT_DIRECTORY")
+        [[ "$FROZEN" == "true" ]] && args+=(--frozen)
+        IFS=',' read -r -a groups <<< "$DEPENDENCY_GROUPS"
+        for group in "${groups[@]}"; do
+          group="${group#${group%%[![:space:]]*}}"
+          group="${group%${group##*[![:space:]]}}"
+          [[ -z "$group" ]] || args+=(--group "$group")
+        done
+        IFS=',' read -r -a extras <<< "$EXTRAS"
+        for extra in "${extras[@]}"; do
+          extra="${extra#${extra%%[![:space:]]*}}"
+          extra="${extra%${extra##*[![:space:]]}}"
+          [[ -z "$extra" ]] || args+=(--extra "$extra")
+        done
+        uv "${args[@]}"
+    - name: Run optional pre-build
+      if: inputs.run-prebuild == 'true'
+      shell: bash
+      env:
+        INVOKE_TASKS: ${{ inputs.invoke-tasks }}
+        PROJECT_DIRECTORY: ${{ inputs.project-directory }}
+      run: uv run --project "$PROJECT_DIRECTORY" invoke $INVOKE_TASKS
     - name: Install packaging tools
-      shell: bash -el {0}
-      run: python -m pip install --upgrade build twine
-
-    - name: Build and validate distributions
-      shell: bash -el {0}
+      shell: bash
+      run: python -m pip install --disable-pip-version-check build==1.3.0 twine==6.2.0
+    - name: Build distributions
+      shell: bash
       env:
         BUILD_SDIST: ${{ inputs.sdist }}
         BUILD_WHEEL: ${{ inputs.wheel }}
       run: |
-        args=()
+        args=(--outdir dist)
         [[ "$BUILD_SDIST" == "true" ]] && args+=(--sdist)
         [[ "$BUILD_WHEEL" == "true" ]] && args+=(--wheel)
-        if [[ ${#args[@]} -eq 0 ]]; then
+        if [[ ${#args[@]} -eq 2 ]]; then
           echo "::error::At least one of sdist or wheel must be true"
           exit 1
         fi
         python -m build "${args[@]}"
-
-        distributions=()
-        while IFS= read -r -d '' distribution; do
-          distributions+=("$distribution")
-        done < <(find dist -maxdepth 1 -type f \( -name '*.whl' -o -name '*.tar.gz' \) -print0)
-        if [[ ${#distributions[@]} -eq 0 ]]; then
-          echo "::error::The build did not create any Python distributions"
-          exit 1
-        fi
-        python -m twine check "${distributions[@]}"
-
+    - name: Verify distributions
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        IMPORT_MODULES: ${{ inputs.import-modules }}
+      run: |
+        args=("$ACTION_PATH/../package/verify_distributions.py" dist)
+        IFS=',' read -r -a modules <<< "$IMPORT_MODULES"
+        for module in "${modules[@]}"; do
+          module="${module#${module%%[![:space:]]*}}"
+          module="${module%${module##*[![:space:]]}}"
+          [[ -n "$module" ]] && args+=(--import-module "$module")
+        done
+        python "${args[@]}"
     - name: Upload Python distributions
-      uses: actions/upload-artifact@v7.0.1
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: ${{ inputs.distribution-artifact-name }}
         path: |
           dist/*.whl
           dist/*.tar.gz
-        if-no-files-found: error
-
-    - name: Upload additional release assets
-      if: inputs.release-assets != ''
-      uses: actions/upload-artifact@v7.0.1
-      with:
-        name: ${{ inputs.release-assets-artifact-name }}
-        path: ${{ inputs.release-assets }}
         if-no-files-found: error

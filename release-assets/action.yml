@@ -1,129 +1,136 @@
-name: Build release assets
-description: Run an Invoke task and upload what it produces as release assets
+name: Upload release assets
+description: Validate and upload caller-built files as a workflow artifact
 
 inputs:
   python-version:
-    description: Python version used to build the assets
+    description: Python version used by optional Invoke tasks
     default: "3.12"
   management-tool:
-    description: Dependency manager used for the build (uv or conda)
+    description: Dependency manager for optional Invoke tasks (uv or conda)
     default: uv
+  dependency-groups:
+    description: Comma-separated uv groups needed by optional Invoke tasks
+    default: ""
   extras:
-    description: Extras needed by the build tasks
+    description: Comma-separated uv extras needed by optional Invoke tasks
     default: dev
+  project-directory:
+    description: Project directory
+    default: .
+  frozen:
+    description: Require the committed uv lock
+    default: "true"
   conda-environment:
-    description: Name of the Conda environment
+    description: Conda environment name
     default: compas
   environment-file:
-    description: Explicit Conda environment file; OS-specific files are detected when omitted
-    default: ""
+    description: Conda environment file
+    default: environment.yml
+  run-prebuild:
+    description: Run Invoke tasks before uploading assets
+    default: "false"
   invoke-tasks:
-    description: Space-separated Invoke tasks that produce the assets
+    description: Space-separated Invoke tasks producing the assets
     default: create-class-assets
   paths:
-    description: Multiline paths/globs to upload
-    default: dist/proto/*.zip
+    description: Multiline paths or globs to upload
+    required: true
   artifact-name:
-    description: Workflow artifact the assets are uploaded as
+    description: Workflow artifact name
     default: github-release-assets
   if-no-files-found:
-    description: Behaviour when no file matches paths (error, warn or ignore)
+    description: Behaviour when no file matches paths (error, warn, or ignore)
     default: error
-  submodules:
-    description: Checkout submodules (false, true, or recursive)
-    default: "false"
 
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@v7.0.1
-      with:
-        submodules: ${{ inputs.submodules }}
-        persist-credentials: false
-
-    - uses: actions/setup-python@v7.0.0
-      if: inputs.management-tool == 'uv'
-      with:
-        python-version: ${{ inputs.python-version }}
-
-    - uses: astral-sh/setup-uv@v10.0.0
-      if: inputs.management-tool == 'uv'
-
-    - name: Validate management tool
+    - name: Validate inputs
       shell: bash
       env:
+        IF_NO_FILES_FOUND: ${{ inputs.if-no-files-found }}
+        FROZEN: ${{ inputs.frozen }}
         MANAGEMENT_TOOL: ${{ inputs.management-tool }}
+        PATHS: ${{ inputs.paths }}
+        RUN_PREBUILD: ${{ inputs.run-prebuild }}
       run: |
-        case "$MANAGEMENT_TOOL" in
-          uv|conda) ;;
-          *) echo "::error::management-tool must be uv or conda"; exit 1 ;;
+        [[ -n "$PATHS" ]] || { echo "::error::paths must not be empty"; exit 1; }
+        case "$IF_NO_FILES_FOUND" in
+          error|warn|ignore) ;;
+          *) echo "::error::if-no-files-found must be error, warn, or ignore"; exit 1 ;;
         esac
-
-    - name: Set up Conda
-      if: inputs.management-tool == 'conda'
-      uses: conda-incubator/setup-miniconda@v4.0.1
+        case "$MANAGEMENT_TOOL" in uv|conda) ;; *) echo "::error::management-tool must be uv or conda"; exit 1 ;; esac
+        case "$RUN_PREBUILD" in true|false) ;; *) echo "::error::run-prebuild must be true or false"; exit 1 ;; esac
+        case "$FROZEN" in true|false) ;; *) echo "::error::frozen must be true or false"; exit 1 ;; esac
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      if: inputs.run-prebuild == 'true' && inputs.management-tool == 'uv'
+      with:
+        python-version: ${{ inputs.python-version }}
+    - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+      if: inputs.run-prebuild == 'true' && inputs.management-tool == 'uv'
+    - name: Synchronize optional uv environment
+      if: inputs.run-prebuild == 'true' && inputs.management-tool == 'uv'
+      shell: bash
+      env:
+        DEPENDENCY_GROUPS: ${{ inputs.dependency-groups }}
+        EXTRAS: ${{ inputs.extras }}
+        FROZEN: ${{ inputs.frozen }}
+        PROJECT_DIRECTORY: ${{ inputs.project-directory }}
+      run: |
+        args=(sync --project "$PROJECT_DIRECTORY")
+        [[ "$FROZEN" == "true" ]] && args+=(--frozen)
+        IFS=',' read -r -a groups <<< "$DEPENDENCY_GROUPS"
+        for group in "${groups[@]}"; do
+          group="${group#${group%%[![:space:]]*}}"
+          group="${group%${group##*[![:space:]]}}"
+          [[ -z "$group" ]] || args+=(--group "$group")
+        done
+        IFS=',' read -r -a extras <<< "$EXTRAS"
+        for extra in "${extras[@]}"; do
+          extra="${extra#${extra%%[![:space:]]*}}"
+          extra="${extra%${extra##*[![:space:]]}}"
+          [[ -z "$extra" ]] || args+=(--extra "$extra")
+        done
+        uv "${args[@]}"
+    - uses: conda-incubator/setup-miniconda@8ee1f361103df19b6f8c8655fd3967a8ecb162d5 # v4.0.1
+      if: inputs.run-prebuild == 'true' && inputs.management-tool == 'conda'
       with:
         miniconda-version: latest
         channels: conda-forge
         activate-environment: ${{ inputs.conda-environment }}
         python-version: ${{ inputs.python-version }}
-
-    - name: Select Conda environment file
-      if: inputs.management-tool == 'conda'
-      id: conda-file
-      shell: bash -el {0}
-      env:
-        EXPLICIT_FILE: ${{ inputs.environment-file }}
-      run: |
-        if [[ -n "$EXPLICIT_FILE" ]]; then
-          candidate="$EXPLICIT_FILE"
-        elif [[ "$RUNNER_OS" == "Windows" && -f env_win.yml ]]; then
-          candidate=env_win.yml
-        elif [[ "$RUNNER_OS" == "macOS" && -f env_osx.yml ]]; then
-          candidate=env_osx.yml
-        elif [[ "$RUNNER_OS" == "Linux" && -f env_linux.yml ]]; then
-          candidate=env_linux.yml
-        else
-          candidate=environment.yml
-        fi
-
-        if [[ ! -f "$candidate" ]]; then
-          echo "::error::Conda environment file not found: $candidate"
-          exit 1
-        fi
-        echo "path=$candidate" >> "$GITHUB_OUTPUT"
-
-    - name: Install Conda environment
-      if: inputs.management-tool == 'conda'
+    - name: Install optional Conda environment
+      if: inputs.run-prebuild == 'true' && inputs.management-tool == 'conda'
       shell: bash -el {0}
       env:
         CONDA_ENVIRONMENT: ${{ inputs.conda-environment }}
-        ENVIRONMENT_FILE: ${{ steps.conda-file.outputs.path }}
+        ENVIRONMENT_FILE: ${{ inputs.environment-file }}
       run: conda env update -f "$ENVIRONMENT_FILE" -n "$CONDA_ENVIRONMENT"
-
-    - name: Install project
-      if: inputs.management-tool == 'uv'
-      shell: bash
-      env:
-        EXTRAS: ${{ inputs.extras }}
-      run: |
-        requirement="."
-        [[ -n "$EXTRAS" ]] && requirement=".[$EXTRAS]"
-        uv pip install --system -e "$requirement"
-
-    - name: Build assets
+    - name: Run optional Invoke asset build
+      if: inputs.run-prebuild == 'true'
       shell: bash -el {0}
       env:
         INVOKE_TASKS: ${{ inputs.invoke-tasks }}
+        MANAGEMENT_TOOL: ${{ inputs.management-tool }}
+        PROJECT_DIRECTORY: ${{ inputs.project-directory }}
       run: |
-        if [[ -z "$INVOKE_TASKS" ]]; then
-          echo "::error::invoke-tasks must name at least one task"
-          exit 1
-        fi
-        invoke $INVOKE_TASKS
-
+        if [[ "$MANAGEMENT_TOOL" == "uv" ]]; then uv run --project "$PROJECT_DIRECTORY" invoke $INVOKE_TASKS; else python -m invoke $INVOKE_TASKS; fi
+    - name: Validate release assets
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        IF_NO_FILES_FOUND: ${{ inputs.if-no-files-found }}
+        PATHS: ${{ inputs.paths }}
+      run: |
+        patterns=()
+        while IFS= read -r pattern; do
+          [[ -n "$pattern" ]] && patterns+=("$pattern")
+        done <<< "$PATHS"
+        args=("$ACTION_PATH/validate_assets.py")
+        [[ "$IF_NO_FILES_FOUND" != "error" ]] && args+=(--allow-missing)
+        python "${args[@]}" "${patterns[@]}"
     - name: Upload release assets
-      uses: actions/upload-artifact@v7.0.1
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: ${{ inputs.artifact-name }}
         path: ${{ inputs.paths }}

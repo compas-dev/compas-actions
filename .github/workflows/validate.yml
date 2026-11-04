@@ -17,19 +17,17 @@ jobs:
     name: Validate actions and workflows
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Lint workflows
-        uses: docker://rhysd/actionlint:1.7.12
-        with:
-          args: -color
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@914e7df21a07ef503a81201c76d2b11c789d3fca -color
       - name: Audit workflow security
-        uses: zizmorcore/zizmor-action@v0.6.2
+        uses: zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054 # v0.6.2
         with:
           advanced-security: false
           persona: regular
-      - uses: actions/setup-python@v7.0.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
       - name: Compile Python helpers
@@ -51,23 +49,23 @@ jobs:
     name: Test standalone componentizer integration
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: compas-dev/ghpython_componentizer
-          ref: main
+          ref: 1212887a6033a5795e74ba8919cd31b37f08ca5c
           path: componentizer-fixture
           persist-credentials: false
-      - uses: actions/setup-python@v7.0.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - uses: ./ghpython-components
         with:
           source: componentizer-fixture/examples/cpy
           target: ${{ runner.temp }}/ghuser
-          componentizer-ref: main
+          componentizer-ref: 1212887a6033a5795e74ba8919cd31b37f08ca5c
       - name: Verify generated components
         shell: pwsh
         run: |
@@ -76,3 +74,38 @@ jobs:
             Write-Error "The componentizer did not generate any .ghuser files."
             exit 1
           }
+
+  locked-project:
+    name: Locked project (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./setup-python
+        with:
+          project-directory: tests/fixtures/locked-project
+          dependency-groups: dev
+          extras: ""
+      - name: Verify synchronized project
+        run: uv run --project tests/fixtures/locked-project python -c "import compas_actions_fixture; assert compas_actions_fixture.VALUE == 'verified'"
+
+  package-fixture:
+    name: Build and verify package fixture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: ./package
+        with:
+          project-directory: tests/fixtures/locked-project
+          output-directory: tests/fixtures/locked-project/dist
+          import-modules: compas_actions_fixture

@@ -1,23 +1,25 @@
 name: build
-
-on:
-  pull_request:
-  push:
-    branches: [main]
-
+on: [pull_request]
 permissions:
   contents: read
-
 jobs:
   test:
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python: ["3.11", "3.12", "3.13"]
+        python: ["3.12", "3.13", "3.14"]
     steps:
-      - uses: compas-dev/compas-actions/ci@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Replace the zero SHA with the reviewed compas-actions v2 commit.
+      - uses: compas-dev/compas-actions/setup-python@0000000000000000000000000000000000000000
         with:
           python-version: ${{ matrix.python }}
-          invoke-tasks: lint test
+          dependency-groups: dev
+          extras: ""
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pyright
+      - run: uv run pytest

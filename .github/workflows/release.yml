@@ -26,7 +26,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -47,12 +47,8 @@ jobs:
         run: |
           latest=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n 1)
 
-          # With no point release tagged yet, carry on from the movable major tag, so the
-          # series consumers already pin to continues instead of restarting at v0 and
-          # stranding them on a tag that stops moving.
           if [[ -z "$latest" ]]; then
-            series=$(git tag --list 'v[0-9]*' | grep -Ex 'v[0-9]+' | sort -V | tail -n 1)
-            latest="${series:-v0}.0.0"
+            latest="v1.0.0"
           fi
 
           IFS=. read -r major minor patch <<< "${latest#v}"
@@ -69,17 +65,13 @@ jobs:
             exit 1
           fi
 
-          {
-            echo "version=${version}"
-            echo "major=v${major}"
-          } >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
           echo "Releasing ${version}, up from ${latest}"
 
       - name: Tag the release
         env:
           GH_TOKEN: ${{ github.token }}
-          MAJOR: ${{ steps.version.outputs.major }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           # Refs are created through the API rather than pushed, so the job needs no git
@@ -96,17 +88,7 @@ jobs:
             -f ref="refs/tags/${VERSION}" \
             -f sha="$tag_sha" >/dev/null
 
-          # Consumers pin the movable major tag, so it follows every release in the series.
-          # A major release creates a new one and leaves the previous where it is.
-          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${MAJOR}" >/dev/null 2>&1; then
-            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${MAJOR}" \
-              -f sha="$GITHUB_SHA" \
-              -F force=true >/dev/null
-          else
-            gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
-              -f ref="refs/tags/${MAJOR}" \
-              -f sha="$GITHUB_SHA" >/dev/null
-          fi
+          # Consumers pin this immutable release commit SHA. Tags are for discovery only.
 
       - name: Publish the release
         env:

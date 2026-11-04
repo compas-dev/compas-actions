@@ -1,5 +1,5 @@
 name: Setup Python project
-description: Set up Python and install a COMPAS project with uv or Conda
+description: Synchronize a locked uv project or provision an explicit Conda environment
 
 inputs:
   python-version:
@@ -8,9 +8,18 @@ inputs:
   management-tool:
     description: Dependency manager (uv or conda)
     default: uv
+  dependency-groups:
+    description: Comma-separated uv dependency groups to synchronize
+    default: ""
   extras:
-    description: Comma-separated editable-install extras; leave empty for no extras
+    description: Comma-separated uv project extras to synchronize
     default: dev
+  project-directory:
+    description: Directory containing pyproject.toml and uv.lock
+    default: .
+  frozen:
+    description: Require the committed uv lock file to be current
+    default: "true"
   conda-environment:
     description: Name of the Conda environment
     default: compas
@@ -24,69 +33,79 @@ runs:
     - name: Validate inputs
       shell: bash
       env:
+        FROZEN: ${{ inputs.frozen }}
         MANAGEMENT_TOOL: ${{ inputs.management-tool }}
       run: |
-        case "$MANAGEMENT_TOOL" in
-          uv|conda) ;;
-          *) echo "::error::management-tool must be uv or conda"; exit 1 ;;
-        esac
+        case "$MANAGEMENT_TOOL" in uv|conda) ;; *) echo "::error::management-tool must be uv or conda"; exit 1 ;; esac
+        case "$FROZEN" in true|false) ;; *) echo "::error::frozen must be true or false"; exit 1 ;; esac
 
-    - name: Set up Python
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       if: inputs.management-tool == 'uv'
-      uses: actions/setup-python@v7.0.0
       with:
         python-version: ${{ inputs.python-version }}
-
-    - name: Set up uv
+    - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
       if: inputs.management-tool == 'uv'
-      uses: astral-sh/setup-uv@v10.0.0
-
-    - name: Install project
+    - name: Synchronize locked uv environment
       if: inputs.management-tool == 'uv'
       shell: bash
       env:
+        DEPENDENCY_GROUPS: ${{ inputs.dependency-groups }}
         EXTRAS: ${{ inputs.extras }}
+        FROZEN: ${{ inputs.frozen }}
+        PROJECT_DIRECTORY: ${{ inputs.project-directory }}
       run: |
-        requirement="."
-        if [[ -n "$EXTRAS" ]]; then
-          requirement=".[$EXTRAS]"
+        if [[ ! -f "$PROJECT_DIRECTORY/pyproject.toml" ]]; then
+          echo "::error::pyproject.toml not found in $PROJECT_DIRECTORY"
+          exit 1
         fi
-        uv pip install --system -e "$requirement"
+        if [[ "$FROZEN" == "true" && ! -f "$PROJECT_DIRECTORY/uv.lock" ]]; then
+          echo "::error::uv.lock not found in $PROJECT_DIRECTORY"
+          exit 1
+        fi
+        args=(sync --project "$PROJECT_DIRECTORY")
+        [[ "$FROZEN" == "true" ]] && args+=(--frozen)
+        IFS=',' read -r -a groups <<< "$DEPENDENCY_GROUPS"
+        for group in "${groups[@]}"; do
+          group="${group#${group%%[![:space:]]*}}"
+          group="${group%${group##*[![:space:]]}}"
+          [[ -n "$group" ]] && args+=(--group "$group")
+        done
+        IFS=',' read -r -a extras <<< "$EXTRAS"
+        for extra in "${extras[@]}"; do
+          extra="${extra#${extra%%[![:space:]]*}}"
+          extra="${extra%${extra##*[![:space:]]}}"
+          [[ -n "$extra" ]] && args+=(--extra "$extra")
+        done
+        uv "${args[@]}"
 
-    - name: Set up Conda
+    - uses: conda-incubator/setup-miniconda@8ee1f361103df19b6f8c8655fd3967a8ecb162d5 # v4.0.1
       if: inputs.management-tool == 'conda'
-      uses: conda-incubator/setup-miniconda@v4.0.1
       with:
         miniconda-version: latest
         channels: conda-forge
         activate-environment: ${{ inputs.conda-environment }}
         python-version: ${{ inputs.python-version }}
-
     - name: Select Conda environment file
       if: inputs.management-tool == 'conda'
       id: conda-file
       shell: bash -el {0}
       env:
         EXPLICIT_FILE: ${{ inputs.environment-file }}
+        PROJECT_DIRECTORY: ${{ inputs.project-directory }}
       run: |
         if [[ -n "$EXPLICIT_FILE" ]]; then
           candidate="$EXPLICIT_FILE"
-        elif [[ "$RUNNER_OS" == "Windows" && -f env_win.yml ]]; then
-          candidate=env_win.yml
-        elif [[ "$RUNNER_OS" == "macOS" && -f env_osx.yml ]]; then
-          candidate=env_osx.yml
-        elif [[ "$RUNNER_OS" == "Linux" && -f env_linux.yml ]]; then
-          candidate=env_linux.yml
+        elif [[ "$RUNNER_OS" == "Windows" && -f "$PROJECT_DIRECTORY/env_win.yml" ]]; then
+          candidate="$PROJECT_DIRECTORY/env_win.yml"
+        elif [[ "$RUNNER_OS" == "macOS" && -f "$PROJECT_DIRECTORY/env_osx.yml" ]]; then
+          candidate="$PROJECT_DIRECTORY/env_osx.yml"
+        elif [[ "$RUNNER_OS" == "Linux" && -f "$PROJECT_DIRECTORY/env_linux.yml" ]]; then
+          candidate="$PROJECT_DIRECTORY/env_linux.yml"
         else
-          candidate=environment.yml
+          candidate="$PROJECT_DIRECTORY/environment.yml"
         fi
-
-        if [[ ! -f "$candidate" ]]; then
-          echo "::error::Conda environment file not found: $candidate"
-          exit 1
-        fi
+        [[ -f "$candidate" ]] || { echo "::error::Conda environment file not found: $candidate"; exit 1; }
         echo "path=$candidate" >> "$GITHUB_OUTPUT"
-
     - name: Install Conda environment
       if: inputs.management-tool == 'conda'
       shell: bash -el {0}

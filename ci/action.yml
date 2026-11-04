@@ -1,5 +1,5 @@
 name: Run Python CI
-description: Check out, install, and test a COMPAS project on the caller's runner
+description: Check out, install, and optionally run legacy Invoke checks on one caller-owned matrix job
 
 inputs:
   python-version:
@@ -8,14 +8,29 @@ inputs:
   management-tool:
     description: Dependency manager (uv or conda)
     default: uv
+  dependency-groups:
+    description: Comma-separated uv dependency groups
+    default: ""
   extras:
-    description: Comma-separated editable-install extras
+    description: Comma-separated uv project extras
     default: dev
+  project-directory:
+    description: Project directory
+    default: .
+  frozen:
+    description: Require the committed uv lock file to be current
+    default: "true"
+  conda-environment:
+    description: Conda environment name
+    default: compas
+  environment-file:
+    description: Explicit Conda environment file
+    default: ""
   invoke-tasks:
-    description: Space-separated Invoke tasks; leave empty to skip
+    description: Space-separated Invoke tasks; leave empty when caller commands are visible steps
     default: lint test
   run-prebuild:
-    description: Run invoke pre-build before checks
+    description: Run the Invoke pre-build task before checks
     default: "false"
   check-import:
     description: Run python -m compas
@@ -27,76 +42,99 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@v7.0.1
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
         submodules: ${{ inputs.submodules }}
-
-    - name: Validate management tool
+    - name: Validate inputs
       shell: bash
       env:
+        FROZEN: ${{ inputs.frozen }}
         MANAGEMENT_TOOL: ${{ inputs.management-tool }}
       run: |
-        case "$MANAGEMENT_TOOL" in
-          uv|conda) ;;
-          *) echo "::error::management-tool must be uv or conda"; exit 1 ;;
-        esac
-
-    - uses: actions/setup-python@v7.0.0
+        case "$MANAGEMENT_TOOL" in uv|conda) ;; *) echo "::error::management-tool must be uv or conda"; exit 1 ;; esac
+        case "$FROZEN" in true|false) ;; *) echo "::error::frozen must be true or false"; exit 1 ;; esac
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       if: inputs.management-tool == 'uv'
       with:
         python-version: ${{ inputs.python-version }}
-
-    - uses: astral-sh/setup-uv@v10.0.0
+    - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
       if: inputs.management-tool == 'uv'
-
-    - name: Install project
+    - name: Synchronize locked uv environment
       if: inputs.management-tool == 'uv'
       shell: bash
       env:
+        DEPENDENCY_GROUPS: ${{ inputs.dependency-groups }}
         EXTRAS: ${{ inputs.extras }}
+        FROZEN: ${{ inputs.frozen }}
+        PROJECT_DIRECTORY: ${{ inputs.project-directory }}
       run: |
-        requirement="."
-        [[ -n "$EXTRAS" ]] && requirement=".[$EXTRAS]"
-        uv pip install --system -e "$requirement"
-
-    - uses: conda-incubator/setup-miniconda@v4.0.1
+        [[ "$FROZEN" != "true" || -f "$PROJECT_DIRECTORY/uv.lock" ]] || { echo "::error::uv.lock not found"; exit 1; }
+        args=(sync --project "$PROJECT_DIRECTORY")
+        [[ "$FROZEN" == "true" ]] && args+=(--frozen)
+        IFS=',' read -r -a groups <<< "$DEPENDENCY_GROUPS"
+        for group in "${groups[@]}"; do
+          group="${group#${group%%[![:space:]]*}}"
+          group="${group%${group##*[![:space:]]}}"
+          [[ -z "$group" ]] || args+=(--group "$group")
+        done
+        IFS=',' read -r -a extras <<< "$EXTRAS"
+        for extra in "${extras[@]}"; do
+          extra="${extra#${extra%%[![:space:]]*}}"
+          extra="${extra%${extra##*[![:space:]]}}"
+          [[ -z "$extra" ]] || args+=(--extra "$extra")
+        done
+        uv "${args[@]}"
+    - uses: conda-incubator/setup-miniconda@8ee1f361103df19b6f8c8655fd3967a8ecb162d5 # v4.0.1
       if: inputs.management-tool == 'conda'
       with:
         miniconda-version: latest
         channels: conda-forge
-        activate-environment: compas
+        activate-environment: ${{ inputs.conda-environment }}
         python-version: ${{ inputs.python-version }}
-
     - name: Install Conda environment
       if: inputs.management-tool == 'conda'
       shell: bash -el {0}
+      env:
+        CONDA_ENVIRONMENT: ${{ inputs.conda-environment }}
+        ENVIRONMENT_FILE: ${{ inputs.environment-file }}
+        PROJECT_DIRECTORY: ${{ inputs.project-directory }}
       run: |
-        if [[ "$RUNNER_OS" == "Windows" && -f env_win.yml ]]; then
-          environment_file=env_win.yml
-        elif [[ "$RUNNER_OS" == "macOS" && -f env_osx.yml ]]; then
-          environment_file=env_osx.yml
-        elif [[ "$RUNNER_OS" == "Linux" && -f env_linux.yml ]]; then
-          environment_file=env_linux.yml
+        if [[ -n "$ENVIRONMENT_FILE" ]]; then
+          candidate="$ENVIRONMENT_FILE"
+        elif [[ "$RUNNER_OS" == "Windows" && -f "$PROJECT_DIRECTORY/env_win.yml" ]]; then
+          candidate="$PROJECT_DIRECTORY/env_win.yml"
+        elif [[ "$RUNNER_OS" == "macOS" && -f "$PROJECT_DIRECTORY/env_osx.yml" ]]; then
+          candidate="$PROJECT_DIRECTORY/env_osx.yml"
+        elif [[ "$RUNNER_OS" == "Linux" && -f "$PROJECT_DIRECTORY/env_linux.yml" ]]; then
+          candidate="$PROJECT_DIRECTORY/env_linux.yml"
         else
-          environment_file=environment.yml
+          candidate="$PROJECT_DIRECTORY/environment.yml"
         fi
-        test -f "$environment_file" || { echo "::error::No Conda environment file found"; exit 1; }
-        conda env update -f "$environment_file" -n compas
-
-    - name: Run pre-build
+        [[ -f "$candidate" ]] || { echo "::error::Conda environment file not found: $candidate"; exit 1; }
+        conda env update -f "$candidate" -n "$CONDA_ENVIRONMENT"
+    - name: Run optional pre-build
       if: inputs.run-prebuild == 'true'
       shell: bash -el {0}
-      run: invoke pre-build
-
+      env:
+        MANAGEMENT_TOOL: ${{ inputs.management-tool }}
+        PROJECT_DIRECTORY: ${{ inputs.project-directory }}
+      run: |
+        if [[ "$MANAGEMENT_TOOL" == "uv" ]]; then uv run --project "$PROJECT_DIRECTORY" invoke pre-build; else python -m invoke pre-build; fi
     - name: Check import
       if: inputs.check-import == 'true'
       shell: bash -el {0}
-      run: python -m compas
-
-    - name: Run checks
+      env:
+        MANAGEMENT_TOOL: ${{ inputs.management-tool }}
+        PROJECT_DIRECTORY: ${{ inputs.project-directory }}
+      run: |
+        if [[ "$MANAGEMENT_TOOL" == "uv" ]]; then uv run --project "$PROJECT_DIRECTORY" python -m compas; else python -m compas; fi
+    - name: Run optional Invoke checks
       if: inputs.invoke-tasks != ''
       shell: bash -el {0}
       env:
         INVOKE_TASKS: ${{ inputs.invoke-tasks }}
-      run: invoke $INVOKE_TASKS
+        MANAGEMENT_TOOL: ${{ inputs.management-tool }}
+        PROJECT_DIRECTORY: ${{ inputs.project-directory }}
+      run: |
+        if [[ "$MANAGEMENT_TOOL" == "uv" ]]; then uv run --project "$PROJECT_DIRECTORY" invoke $INVOKE_TASKS; else python -m invoke $INVOKE_TASKS; fi

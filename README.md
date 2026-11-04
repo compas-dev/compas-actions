@@ -1,165 +1,92 @@
 # compas-actions
 
-Modern, composable GitHub Actions for COMPAS projects.
+Bounded GitHub Actions that make the safe path easy for COMPAS repositories.
 
-This repository implements the direction proposed in
-[compas-actions.build#7](https://github.com/compas-dev/compas-actions.build/issues/7):
-one versioned repository with narrow actions and explicit caller-owned jobs. It
-is a clean break rather than a compatibility bundle.
+The v2 contract shares repeatable mechanics without hiding repository policy.
+Calling workflows keep their matrices, permissions, Conda/native provisioning,
+direct quality commands, artifact composition, and trusted-publishing jobs.
+For compatibility and simple hybrid jobs, `ci` and `setup-python` can provision
+Conda from an explicit, repository-owned environment file. New hybrid/native
+workflows should keep provisioning visible in the caller, as the OCC example
+does, when additional system or native steps are part of the contract.
 
 ## Actions
 
 | Action | Responsibility |
 | --- | --- |
-| `ci` | Check out, install, and test one Python/OS combination |
-| `release-pr` | Bump the version and open a human-reviewed release PR |
-| `release-check` | Validate release metadata in PR and post-merge workflows |
-| `prepare-release` | Build distributions and upload release artifacts |
-| `release-assets` | Run an Invoke task and upload what it produces as release assets |
-| `github-release` | Download artifacts and create a tagged GitHub release |
-| `docs` | Build MkDocs or deploy a version with Mike |
-| `pr-checks` | Require a changelog update or an explicit skip label |
-| `setup-python` | Prepare a custom uv or Conda job |
-| `package` | Build and validate distributions in a custom job |
-| `ghpython-components` | Build Rhino 8 CPython components with `ghpython_componentizer` |
+| `ci` | Set up one caller-owned matrix job and optionally run existing Invoke tasks |
+| `setup-python` | Run frozen `uv sync` or provision an explicit Conda environment |
+| `docs` | Build strict MkDocs documentation or deploy it with Mike |
+| `package` | Build or verify distributions, inspect wheels, install them, and smoke-test imports |
+| `prepare-release` | Build, verify, and upload one pure-Python distribution set |
+| `release-assets` | Upload caller-built assets, with optional Invoke generation |
+| `release-check` | Detect and validate repository-owned release metadata changes |
+| `release-pr` | Bump a version and open a human-reviewed release pull request |
+| `pr-checks` | Enforce changelog policy |
+| `github-release` | Download verified artifacts and create a GitHub release |
+| `ghpython-components` | Build Rhino 8 CPython components from an immutable componentizer revision |
 
-Every public entry point uses the regular action syntax:
-
-```yaml
-- uses: compas-dev/compas-actions/ci@v1
-```
-
-The calling workflow owns its runner, matrix, environment, dependencies, and
-permissions. This keeps the interface readable and keeps security boundaries
-visible where they are enforced.
-
-## CI example
+The preferred v2 CI job keeps direct commands visible and locally reproducible:
 
 ```yaml
-jobs:
-  test:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        python: ["3.11", "3.12", "3.13"]
-    steps:
-      - uses: compas-dev/compas-actions/ci@v1
-        with:
-          python-version: ${{ matrix.python }}
-          invoke-tasks: lint test
+steps:
+  - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+  - uses: compas-dev/compas-actions/setup-python@<immutable-v2-commit>
+    with:
+      python-version: ${{ matrix.python }}
+      dependency-groups: dev
+      extras: ""
+  - run: uv run ruff check .
+  - run: uv run ruff format --check .
+  - run: uv run pyright
+  - run: uv run pytest
 ```
 
-## Secure release structure
+Repositories with established Invoke tasks can migrate incrementally with the
+`ci` action or the optional pre-build inputs on `docs`, `prepare-release`, and
+`release-assets`. Under uv, these always execute as `uv run invoke ...`; direct
+commands remain the default in new examples.
 
-The complete example is in [examples/release.yml](examples/release.yml). It
-uses four separate jobs:
+Existing v1 consumers remain reproducible by pinning the v1 commit. V2
+consumers must pin a reviewed full commit SHA with a readable version comment;
+moving major tags are not an accepted security boundary.
 
-1. `ci` runs with `contents: read`.
-2. `prepare-release` builds once and uploads workflow artifacts with
-   `contents: read`.
-3. A caller-owned PyPA job publishes with `contents: read` and
-   `id-token: write`.
-4. `github-release` creates the release with `contents: write`.
+## Profiles
 
-A package that ships more than its distributions -- generated protobuf
-bindings, schema bundles, compiled assets -- adds a `release-assets` job
-alongside `prepare-release`. Both upload to the same artifact name, so
-`github-release` attaches whatever is there:
+- [Pure Python](examples/ci.yml) uses `setup-python` and direct commands.
+- [OCC/Conda](examples/occ-conda.yml) provisions PythonOCC visibly and keeps
+  native imports in the caller.
+- [CGAL/native wheel](examples/cgal-cibuildwheel.yml) keeps CMake and
+  cibuildwheel visible, then uses `package` to verify the exact wheel set.
 
-```yaml
-assets:
-  needs: release
-  runs-on: ubuntu-latest
-  steps:
-    - uses: compas-dev/compas-actions/release-assets@v1
-      with:
-        invoke-tasks: create-class-assets
-        paths: dist/proto/*.zip
-```
+## Releases
 
-Use it instead of `prepare-release`'s `release-assets` input when the build is
-slow or needs tools the wheel build does not, since that input ties asset
-generation to `invoke pre-build` on every matrix job.
+Use a release pull request as the version and changelog authority. After merge:
 
-When a release collects assets from more than one job, have each job upload under
-its own name and let `github-release` gather them:
+1. `release-check` detects the reviewed release.
+2. Repository jobs run their visible test/build matrices.
+3. `prepare-release`, or a native caller plus `package`, builds and verifies the
+   exact artifacts once.
+4. A caller-owned job publishes those artifacts with PyPI OIDC.
+5. `github-release` downloads the same artifacts and creates the release.
+6. `docs` deploys versioned documentation where applicable.
 
-```yaml
-- uses: compas-dev/compas-actions/github-release@v1
-  with:
-    release-assets-artifact-pattern: github-release-assets-*
-```
+The PyPI environment, `id-token: write`, workflow identity, and publishing step
+remain visible in the calling repository. These actions never publish to PyPI.
 
-The trusted publisher remains explicit in the caller:
+`package` runs Twine validation, checks wheel metadata, installs each wheel in a
+fresh environment when it is compatible with the current runner, and optionally
+imports named modules. Native jobs can set `build: false` and point it at wheels
+produced visibly by cibuildwheel. Every target-platform wheel must also be
+installed and import-smoked on its matching runner; aggregate release jobs only
+perform structural checks on non-host wheels.
 
-```yaml
-publish:
-  needs: prepare
-  runs-on: ubuntu-latest
-  environment:
-    name: pypi
-    url: https://pypi.org/p/YOUR_PROJECT
-  permissions:
-    contents: read
-    id-token: write
-  steps:
-    - uses: actions/download-artifact@v8.0.1
-      with:
-        name: python-package-distributions
-        path: dist
-    - uses: pypa/gh-action-pypi-publish@v1.14.2
-```
+## Security
 
-Configure the matching GitHub owner, repository, workflow filename, and `pypi`
-environment as a Trusted Publisher on PyPI.
+Every external action used inside this repository is pinned to a reviewed full
+commit SHA. Action updates should arrive through reviewed dependency pull
+requests. Deploying documentation, publishing packages, moving tags, and
+changing repository settings remain explicit maintainer operations.
 
-## Release by pull request
-
-`release-pr` turns an explicit `patch`, `minor`, or `major` choice into a
-`release/vX.Y.Z` pull request. It updates `bump-my-version` files, rolls the
-manual `Unreleased` changelog section into the release, and adds a fresh
-`Unreleased` section. It never tags or publishes.
-
-`release-check` validates that version-changing pull requests use the expected
-release branch, contain matching changelog headings, and modify only files the
-version configuration owns, named either by `filename` or by `glob`. After
-merge, it exposes the version and tag to the caller-owned trusted-publishing
-workflow. This flow reads repository
-state rather than commit messages, so merge, squash, and rebase strategies are
-all supported.
-
-The minimal setup uses `github.token`; a maintainer then approves the generated
-pull request's workflow runs. Repositories that later need unattended checks
-can instead pass a GitHub App installation token.
-
-## Versions
-
-`@main` is useful while bootstrapping this repository. Consumers should move to
-the readable `@v1` release tag after the first release.
-
-## Releasing
-
-Run the `release` workflow from the Actions tab and pick `patch`, `minor` or
-`major`. It works out the next version from the existing tags, creates the
-annotated point tag, moves the major tag consumers pin to, and publishes a
-GitHub release with generated notes.
-
-Releases run from the default branch only. A major release creates a new major
-tag and leaves the previous one where it is, so callers on the old one keep
-working until they choose to move.
-
-## Deliberate exclusions
-
-- IronPython and Rhino 7 component generation
-- Sphinx and the old `docversions` site mutation action
-- PyPI API-token uploads
-- compatibility inputs from the old monolithic actions
-- hidden publishing or permission escalation
-
-Documentation uses MkDocs and Mike. Grasshopper generation targets Rhino 8
-CPython only and delegates component generation to
-[`ghpython_componentizer`](https://github.com/compas-dev/ghpython_componentizer).
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the design and
-[MIGRATION.md](MIGRATION.md) for the old-to-new mapping.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the boundary and
+[MIGRATION.md](MIGRATION.md) for v1-to-v2 changes.
