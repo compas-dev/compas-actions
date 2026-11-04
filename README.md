@@ -55,7 +55,9 @@ moving major tags are not an accepted security boundary.
 
 - [Pure Python](examples/ci.yml) uses `setup-python` and direct commands.
 - [OCC/Conda](examples/occ-conda.yml) provisions PythonOCC visibly and keeps
-  native imports in the caller.
+  native imports in the caller. Its documentation step sets
+  `setup-project: false` and `prepared-conda-environment: compas` to reuse that
+  prepared environment through `conda run` without uv sync.
 - [CGAL/native wheel](examples/cgal-cibuildwheel.yml) keeps CMake and
   cibuildwheel visible, then uses `package` to verify the exact wheel set.
 

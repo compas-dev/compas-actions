@@ -63,6 +63,19 @@ class ActionContractTest(unittest.TestCase):
         content = (ROOT / "docs" / "action.yml").read_text(encoding="utf-8")
         self.assertIn('config_path="$PROJECT_DIRECTORY/$config_path"', content)
 
+    def test_docs_can_use_a_caller_prepared_environment(self):
+        content = (ROOT / "docs" / "action.yml").read_text(encoding="utf-8")
+        self.assertIn("setup-project:", content)
+        self.assertIn("setup-project must be true or false", content)
+        self.assertIn(
+            "prepared-conda-environment requires setup-project false", content
+        )
+        self.assertIn("if: inputs.setup-project == 'true'", content)
+        self.assertIn("python -m invoke", content)
+        self.assertIn("python -m mkdocs", content)
+        self.assertNotIn("python -m mike", content)
+        self.assertIn("-- mike --config-file", content)
+
 
 if __name__ == "__main__":
     unittest.main()

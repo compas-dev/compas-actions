@@ -27,3 +27,9 @@ jobs:
         shell: bash -el {0}
       - run: python -c "import OCC.Core.BRep"
         shell: bash -el {0}
+      # Reuse the caller-prepared Conda environment without running uv sync.
+      - uses: compas-dev/compas-actions/docs@0000000000000000000000000000000000000000
+        with:
+          setup-project: false
+          prepared-conda-environment: compas
+          config-file: mkdocs.yml

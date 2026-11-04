@@ -1,10 +1,16 @@
 name: Build or deploy documentation
-description: Synchronize a locked project, build MkDocs strictly, or deploy with Mike
+description: Build MkDocs strictly or deploy with Mike, optionally synchronizing a locked project
 
 inputs:
   python-version:
     description: Python version used to build documentation
     default: "3.12"
+  setup-project:
+    description: Set up Python and synchronize the locked uv project; disable for a caller-prepared environment
+    default: "true"
+  prepared-conda-environment:
+    description: Conda environment name to use when setup-project is false; empty uses the current environment
+    default: ""
   dependency-groups:
     description: Comma-separated dependency groups containing MkDocs and Mike
     default: docs
@@ -44,10 +50,31 @@ runs:
         fetch-depth: ${{ inputs.deploy == 'true' && '0' || '1' }}
         persist-credentials: false
     - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      if: inputs.setup-project == 'true'
       with:
         python-version: ${{ inputs.python-version }}
     - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+      if: inputs.setup-project == 'true'
+    - name: Validate inputs
+      shell: bash
+      env:
+        PREPARED_CONDA_ENVIRONMENT: ${{ inputs.prepared-conda-environment }}
+        SETUP_PROJECT: ${{ inputs.setup-project }}
+      run: |
+        if [[ "$SETUP_PROJECT" != "true" && "$SETUP_PROJECT" != "false" ]]; then
+          echo "::error::setup-project must be true or false"
+          exit 1
+        fi
+        if [[ -n "$PREPARED_CONDA_ENVIRONMENT" && "$SETUP_PROJECT" != "false" ]]; then
+          echo "::error::prepared-conda-environment requires setup-project false"
+          exit 1
+        fi
+        if [[ -n "$PREPARED_CONDA_ENVIRONMENT" && ! "$PREPARED_CONDA_ENVIRONMENT" =~ ^[A-Za-z0-9._-]+$ ]]; then
+          echo "::error::prepared-conda-environment must contain only letters, numbers, dots, underscores, and hyphens"
+          exit 1
+        fi
     - name: Synchronize documentation environment
+      if: inputs.setup-project == 'true'
       shell: bash
       env:
         DEPENDENCY_GROUPS: ${{ inputs.dependency-groups }}
@@ -77,19 +104,32 @@ runs:
       shell: bash
       env:
         INVOKE_TASKS: ${{ inputs.pre-build-tasks }}
+        PREPARED_CONDA_ENVIRONMENT: ${{ inputs.prepared-conda-environment }}
         PROJECT_DIRECTORY: ${{ inputs.project-directory }}
-      run: uv run --project "$PROJECT_DIRECTORY" invoke $INVOKE_TASKS
+        SETUP_PROJECT: ${{ inputs.setup-project }}
+      run: |
+        if [[ "$SETUP_PROJECT" == "true" ]]; then
+          uv run --project "$PROJECT_DIRECTORY" invoke $INVOKE_TASKS
+        else
+          bash "$GITHUB_ACTION_PATH/run-in-environment.sh" "$PREPARED_CONDA_ENVIRONMENT" -- python -m invoke $INVOKE_TASKS
+        fi
     - name: Build documentation
       if: inputs.deploy != 'true'
       shell: bash
       env:
         CONFIG_FILE: ${{ inputs.config-file }}
+        PREPARED_CONDA_ENVIRONMENT: ${{ inputs.prepared-conda-environment }}
         PROJECT_DIRECTORY: ${{ inputs.project-directory }}
+        SETUP_PROJECT: ${{ inputs.setup-project }}
         STRICT_FLAG: ${{ inputs.strict == 'true' && '--strict' || '' }}
       run: |
         config_path="$CONFIG_FILE"
         [[ "$config_path" = /* ]] || config_path="$PROJECT_DIRECTORY/$config_path"
-        uv run --project "$PROJECT_DIRECTORY" mkdocs build --config-file "$config_path" $STRICT_FLAG
+        if [[ "$SETUP_PROJECT" == "true" ]]; then
+          uv run --project "$PROJECT_DIRECTORY" mkdocs build --config-file "$config_path" $STRICT_FLAG
+        else
+          bash "$GITHUB_ACTION_PATH/run-in-environment.sh" "$PREPARED_CONDA_ENVIRONMENT" -- python -m mkdocs build --config-file "$config_path" $STRICT_FLAG
+        fi
     - name: Configure Git
       if: inputs.deploy == 'true'
       shell: bash
@@ -109,12 +149,18 @@ runs:
       env:
         ALIAS: ${{ inputs.alias }}
         CONFIG_FILE: ${{ inputs.config-file }}
+        PREPARED_CONDA_ENVIRONMENT: ${{ inputs.prepared-conda-environment }}
         PROJECT_DIRECTORY: ${{ inputs.project-directory }}
+        SETUP_PROJECT: ${{ inputs.setup-project }}
         VERSION: ${{ inputs.version }}
       run: |
         config_path="$CONFIG_FILE"
         [[ "$config_path" = /* ]] || config_path="$PROJECT_DIRECTORY/$config_path"
-        mike=(uv run --project "$PROJECT_DIRECTORY" mike --config-file "$config_path")
+        if [[ "$SETUP_PROJECT" == "true" ]]; then
+          mike=(uv run --project "$PROJECT_DIRECTORY" mike --config-file "$config_path")
+        else
+          mike=(bash "$GITHUB_ACTION_PATH/run-in-environment.sh" "$PREPARED_CONDA_ENVIRONMENT" -- mike --config-file "$config_path")
+        fi
         if [[ -n "$VERSION" ]]; then
           if [[ "$GITHUB_REF_TYPE" != "tag" && "$GITHUB_REF" != "refs/heads/main" ]]; then
             echo "::error::Versioned deployment is restricted to main and tags"

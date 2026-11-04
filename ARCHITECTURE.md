@@ -20,6 +20,12 @@ Grasshopper builds.
 compatibility and convenience path. This does not move native policy into the
 actions: new hybrid/native workflows keep their environment files, matrices,
 system packages, compilers, and build commands visible in caller YAML.
+The `docs` action normally provisions a locked uv project, but callers that
+already prepared such an environment can set `setup-project: false`; MkDocs,
+Mike, and optional Invoke tasks then run through the current Python environment.
+When the caller prepared a named Conda environment, it also sets
+`prepared-conda-environment`; commands run through `conda run`, which does not
+depend on shell activation and behaves consistently across runner platforms.
 
 ## Public interface
 
